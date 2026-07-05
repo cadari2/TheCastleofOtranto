@@ -1,0 +1,106 @@
+/* The Castle of Otranto — UI layer */
+@font-face { font-family: 'otr-fallback'; src: local('Georgia'); }
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+body { font-family: Georgia, 'Times New Roman', serif; color: #d8cfc0; }
+
+#app { position: fixed; inset: 0; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+
+.hidden { display: none !important; }
+
+/* ---------- post-look overlays ---------- */
+#vignette { position: absolute; inset: 0; pointer-events: none; z-index: 3;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(5,3,8,0.55) 100%);
+  transition: opacity 2s; }
+#grain { position: absolute; inset: -60px; pointer-events: none; z-index: 3; opacity: 0.05; }
+#damage { position: absolute; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(120,10,5,0.55) 100%); }
+#fade { position: absolute; inset: 0; background: #000; z-index: 40; opacity: 1; pointer-events: none;
+  transition: opacity 1.2s ease; }
+#letterbox { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+#letterbox .bar { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height 1.4s ease; }
+#letterbox .bar.top { top: 0; } #letterbox .bar.bottom { bottom: 0; }
+#letterbox.on .bar { height: 11vh; }
+
+/* ---------- HUD ---------- */
+#hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+#crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  font-size: 26px; color: rgba(230,220,200,0.7); text-shadow: 0 0 6px #000; transition: opacity .4s; }
+
+#objective { position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
+  max-width: 70%; text-align: center; opacity: 0; transition: opacity 1s; }
+#objective-text { font-style: italic; font-size: 17px; letter-spacing: 0.06em; color: #cfc4ae;
+  text-shadow: 0 1px 4px #000, 0 0 14px rgba(0,0,0,.8); border-bottom: 1px solid rgba(200,185,150,0.35);
+  padding: 2px 14px 6px; }
+
+#prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; opacity: 0; transition: opacity .25s; }
+#prompt-key { display: inline-block; border: 1px solid rgba(216,207,192,.8); border-radius: 4px;
+  padding: 3px 9px; font-size: 15px; background: rgba(10,8,6,.6); text-shadow: none; }
+#prompt-text { font-size: 16px; font-style: italic; text-shadow: 0 1px 4px #000; }
+
+#lamp-meter { position: absolute; bottom: 30px; left: 34px; width: 130px; height: 5px;
+  background: rgba(20,16,12,.75); border: 1px solid rgba(200,180,140,.35); opacity: 0; transition: opacity .8s; }
+#lamp-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#8a5a1c,#e9a83c); }
+
+#subtitle { position: absolute; left: 50%; bottom: 12vh; transform: translateX(-50%);
+  width: min(760px, 86%); text-align: center; opacity: 0; transition: opacity .35s; }
+#subtitle-name { font-size: 14px; letter-spacing: 0.34em; color: #b7a67c; margin-bottom: 7px;
+  text-transform: uppercase; text-shadow: 0 1px 3px #000; }
+#subtitle-text { font-size: 19px; line-height: 1.55; color: #eee6d6;
+  text-shadow: 0 1px 3px #000, 0 0 18px rgba(0,0,0,.95), 0 0 34px rgba(0,0,0,.8); }
+#subtitle-text .dim { color:#a99; }
+
+#toast { position: absolute; top: 78px; left: 50%; transform: translateX(-50%); font-size: 15px;
+  font-style: italic; color: #b9ae98; opacity: 0; transition: opacity .6s; text-shadow: 0 1px 4px #000; }
+
+/* ---------- QTE ---------- */
+#qte { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  width: 130px; height: 130px; opacity: 0; transition: opacity .18s; }
+#qte-ring { position: absolute; inset: 0; border-radius: 50%;
+  border: 3px solid rgba(233,168,60,.9); box-shadow: 0 0 22px rgba(233,168,60,.35), inset 0 0 18px rgba(0,0,0,.6); }
+#qte-key { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  font-size: 20px; letter-spacing: .1em; color: #f4e9d0; text-shadow: 0 0 8px #000; }
+#qte-label { position: absolute; left: 50%; top: 115%; transform: translateX(-50%);
+  font-style: italic; font-size: 16px; white-space: nowrap; color: #e5d9c0; text-shadow: 0 1px 4px #000; }
+
+/* ---------- chapter card ---------- */
+#chapter-card { position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; opacity: 0; transition: opacity 2s; }
+#chapter-num { font-size: 15px; letter-spacing: .5em; color: #9b8d6f; text-transform: uppercase; margin-bottom: 14px; }
+#chapter-name { font-size: 44px; color: #e8ddc6; letter-spacing: .08em; margin-bottom: 20px; text-shadow: 0 2px 18px #000; }
+#chapter-quote { font-style: italic; font-size: 17px; color: #af9f83; max-width: 620px; line-height: 1.6; }
+
+/* ---------- title & pause ---------- */
+#title-screen, #pause-screen { position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  background: radial-gradient(ellipse at 50% 30%, #17131f 0%, #060409 70%, #000 100%); }
+#pause-screen { background: rgba(4,3,7,0.86); }
+.title-inner h1 { font-size: clamp(44px, 7vw, 84px); font-weight: normal; letter-spacing: .06em;
+  color: #e6dbc2; text-shadow: 0 0 34px rgba(120,90,40,.25), 0 3px 14px #000; line-height: 1.08; }
+.title-inner h2 { font-size: 40px; font-weight: normal; color: #e6dbc2; }
+#title-rule { color: #6d5f45; font-size: 22px; margin-bottom: 16px; letter-spacing: 1em; }
+.byline { margin-top: 14px; font-style: italic; color: #948767; font-size: 17px; letter-spacing: .12em; }
+.menu { margin: 44px 0 30px; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.menu-btn { font-family: inherit; font-size: 19px; letter-spacing: .22em; text-transform: uppercase;
+  color: #cfc2a4; background: transparent; border: 1px solid rgba(160,140,100,.45);
+  padding: 12px 54px; cursor: pointer; transition: all .25s; }
+.menu-btn:hover { color: #f4ead2; border-color: #c9b98f; background: rgba(120,95,50,.12);
+  box-shadow: 0 0 24px rgba(150,120,60,.18); }
+.menu-btn:disabled { opacity: .35; cursor: default; }
+.hint { color: #6f6650; font-size: 13.5px; line-height: 1.7; letter-spacing: .05em; }
+#loading { margin-top: 18px; font-style: italic; color: #857a5f; font-size: 15px; }
+#chapter-select { display: flex; flex-direction: column; gap: 8px; }
+#chapter-select button { font-family: inherit; font-size: 15px; letter-spacing: .12em; color: #b6a988;
+  background: transparent; border: 1px solid rgba(160,140,100,.25); padding: 8px 30px; cursor: pointer; }
+#chapter-select button:hover:not(:disabled) { color: #f4ead2; border-color: #c9b98f; }
+#chapter-select button:disabled { opacity: .3; cursor: default; }
+
+/* ---------- ending ---------- */
+#ending-screen { position: absolute; inset: 0; z-index: 45; display: flex; align-items: center;
+  justify-content: center; text-align: center; background: #000; opacity: 0; transition: opacity 3s; }
+#ending-screen .inner { max-width: 700px; padding: 20px; }
+#ending-screen h2 { font-size: 34px; font-weight: normal; color: #e6dbc2; margin-bottom: 26px; }
+#ending-screen p { font-style: italic; font-size: 18px; line-height: 1.8; color: #b3a788; }

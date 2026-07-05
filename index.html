@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Castle of Otranto — A First-Person Gothic Tale</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A browser-playable 3D adaptation of Horace Walpole's The Castle of Otranto (1764). You are Theodore.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23100c14'/%3E%3Ctext y='25' x='6' font-size='22'%3E%F0%9F%9B%A1%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="view"></canvas>
+
+  <!-- Post-look overlays (cheap "grading" without a composer) -->
+  <div id="vignette"></div>
+  <div id="grain"></div>
+  <div id="letterbox"><div class="bar top"></div><div class="bar bottom"></div></div>
+  <div id="damage"></div>
+  <div id="fade"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="crosshair">·</div>
+    <div id="objective"><span id="objective-text"></span></div>
+    <div id="prompt"><span id="prompt-key">E</span><span id="prompt-text"></span></div>
+    <div id="lamp-meter"><div id="lamp-fill"></div></div>
+    <div id="subtitle"><div id="subtitle-name"></div><div id="subtitle-text"></div></div>
+    <div id="qte"><div id="qte-ring"></div><div id="qte-key">SPACE</div><div id="qte-label"></div></div>
+    <div id="chapter-card"><div id="chapter-num"></div><div id="chapter-name"></div><div id="chapter-quote"></div></div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- Title / menu -->
+  <div id="title-screen">
+    <div class="title-inner">
+      <div id="title-rule">&#10087;</div>
+      <h1>The Castle<br>of Otranto</h1>
+      <div class="byline">a gothic story &middot; after Horace Walpole, 1764</div>
+      <div class="menu">
+        <button id="btn-start" class="menu-btn">Begin</button>
+        <button id="btn-continue" class="menu-btn hidden">Continue</button>
+        <div id="chapter-select" class="hidden"></div>
+        <button id="btn-chapters" class="menu-btn hidden">Chapters</button>
+      </div>
+      <div class="hint">First-person &middot; WASD move &middot; mouse look &middot; SHIFT run &middot; E interact &middot; click to lock the mouse<br>Headphones recommended</div>
+      <div id="loading">preparing the castle&hellip;</div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause-screen" class="hidden">
+    <div class="title-inner">
+      <h2>Paused</h2>
+      <div class="menu">
+        <button id="btn-resume" class="menu-btn">Resume</button>
+        <button id="btn-restart-beat" class="menu-btn">Restart from checkpoint</button>
+        <button id="btn-quit" class="menu-btn">Title screen</button>
+      </div>
+      <div class="hint">Esc resumes</div>
+    </div>
+  </div>
+</div>
+
+<script src="js/vendor/three.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/materials.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/player.js"></script>
+<script src="js/props.js"></script>
+<script src="js/figures.js"></script>
+<script src="js/world.js"></script>
+<script src="js/ch1.js"></script>
+<script src="js/ch2.js"></script>
+<script src="js/ch3.js"></script>
+<script src="js/ch4.js"></script>
+<script src="js/ch5.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
