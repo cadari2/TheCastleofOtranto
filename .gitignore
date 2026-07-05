@@ -1,0 +1,9 @@
+# Local testing tooling only — NOT part of the playable deliverable.
+node_modules/
+package.json
+package-lock.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
