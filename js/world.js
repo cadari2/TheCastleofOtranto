@@ -22,9 +22,17 @@
 
     // ---------- lifecycle ----------
     dispose() {
+      this.disposed = true; // lets zombie animation loops (walkTo, etc.) bail out
       this.scene.traverse(o => {
         if (o.geometry) o.geometry.dispose && o.geometry.dispose();
       });
+      // Per-chapter environment / background maps are freshly built canvas
+      // textures (materials.makeEnv, scene.background colours or textures);
+      // free them so they don't accumulate on the GPU across chapters. Shared
+      // library materials/textures are reused every chapter and left alone.
+      const env = this.scene.environment, bg = this.scene.background;
+      if (env && env.isTexture && !(env.userData && env.userData.shared)) env.dispose();
+      if (bg && bg.isTexture && !(bg.userData && bg.userData.shared)) bg.dispose();
       this.disposables.forEach(d => { try { d(); } catch (e) {} });
     }
 

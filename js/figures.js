@@ -101,6 +101,8 @@
         g.userData.walking = true;
         g.faceTo(tx, tz);
         const step = () => {
+          // stop if the chapter that owns this figure has been torn down
+          if (world.disposed) { g.userData.walking = false; resolve(); return; }
           const dx = tx - g.position.x, dz = tz - g.position.z;
           const d = Math.hypot(dx, dz);
           if (d < 0.08) { g.userData.walking = false; resolve(); return; }

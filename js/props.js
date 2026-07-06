@@ -98,14 +98,17 @@
     const legGeo = new THREE.BoxGeometry(legW, height, depth);
     const l = mesh(legGeo, material, -(width / 2 + legW / 2), height / 2, 0); g.add(l);
     const r = mesh(legGeo.clone(), material, (width / 2 + legW / 2), height / 2, 0); g.add(r);
-    // semicircular arch made of voussoir boxes
+    // semicircular arch made of voussoir boxes. The voussoirs are sized to the
+    // arc spacing (with overlap) and packed densely enough that they read as a
+    // continuous stone arch rather than a ring of floating blocks.
     const arcR = width / 2 + legW / 2;
-    const segs = 9;
+    const segs = Math.max(11, Math.round(arcR * 4));
+    const voussoirW = (Math.PI * arcR / segs) * 1.6; // tangential, overlaps its neighbours
     for (let i = 0; i <= segs; i++) {
       const a = Math.PI * (i / segs);
       const vx = -Math.cos(a) * arcR;
       const vy = height + Math.sin(a) * arcR;
-      const box = new THREE.BoxGeometry(0.55, 0.5, depth);
+      const box = new THREE.BoxGeometry(voussoirW, 0.55, depth);
       const vm = mesh(box, material, vx, vy, 0);
       vm.rotation.z = a - Math.PI / 2;
       g.add(vm);
