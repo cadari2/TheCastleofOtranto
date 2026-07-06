@@ -2,15 +2,16 @@
    (the vendored build is the global r160 script, so the ES-module
    EffectComposer/UnrealBloomPass are not available).
 
-   Everything runs in LINEAR tone-mapped space (the render targets do no colour
-   encoding) and the composite does the single sRGB encode itself, so the result
-   matches what the renderer draws straight to the canvas — with strength 0 the
-   output is identical:
+   r160 applies tone mapping only when drawing to the canvas — renders into a
+   WebGLRenderTarget come out as raw linear, NOT tone-mapped. So rtScene holds
+   raw linear values and the composite reproduces the renderer's ACESFilmic
+   curve (at the renderer's current exposure) before its single sRGB encode;
+   with strength 0 the output then matches a direct canvas draw:
 
-     scene ──tone-map──▶ rtScene (MSAA, linear)
+     scene ──▶ rtScene (MSAA, raw linear)
      rtScene ──bright-pass──▶ rtHalfA
      rtHalfA ──blur H──▶ rtHalfB ──blur V──▶ rtHalfA   (×2 iterations)
-     composite: sRGB( screen(rtScene, bloom·strength) ) ──▶ canvas
+     composite: sRGB( screen(ACES(rtScene), bloom·strength) ) ──▶ canvas
 
    If anything throws during init the game falls back to direct rendering. */
 'use strict';
@@ -47,14 +48,35 @@
   const COMPOSITE = `
     precision highp float;
     in vec2 vUv; out vec4 outColor;
-    uniform sampler2D tScene; uniform sampler2D tBloom; uniform float strength;
+    uniform sampler2D tScene; uniform sampler2D tBloom; uniform float strength; uniform float exposure;
+    // three.js ACESFilmicToneMapping, reproduced here because r160 skips tone
+    // mapping in render-target passes — without it the base image ships raw
+    // linear, which lifts near-black blues/greens into visible teal patches.
+    vec3 RRTAndODTFit(vec3 v) {
+      vec3 a = v * (v + 0.0245786) - 0.000090537;
+      vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+      return a / b;
+    }
+    vec3 aces(vec3 color) {
+      const mat3 inM = mat3(
+        vec3(0.59719, 0.07600, 0.02840),
+        vec3(0.35458, 0.90834, 0.13383),
+        vec3(0.04823, 0.01566, 0.83777));
+      const mat3 outM = mat3(
+        vec3(1.60475, -0.10208, -0.00327),
+        vec3(-0.53108, 1.10813, -0.07276),
+        vec3(-0.07367, -0.00605, 1.07602));
+      color *= exposure / 0.6;
+      color = outM * RRTAndODTFit(inM * color);
+      return clamp(color, 0.0, 1.0);
+    }
     vec3 toSRGB(vec3 c) {
       c = clamp(c, 0.0, 1.0);
       return mix(1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, c * 12.92, step(c, vec3(0.0031308)));
     }
     void main() {
-      vec3 base = texture(tScene, vUv).rgb;   // linear tone-mapped
-      vec3 bloom = texture(tBloom, vUv).rgb;  // linear
+      vec3 base = aces(texture(tScene, vUv).rgb); // tone-map to match a direct draw
+      vec3 bloom = texture(tBloom, vUv).rgb;      // linear highlights
       // screen-blend the bloom so highlights glow without washing mid-tones
       vec3 b = bloom * strength;
       vec3 c = 1.0 - (1.0 - base) * (1.0 - b);
@@ -93,7 +115,7 @@
       });
       this.mBright = mk(BRIGHT, { tScene: { value: null }, threshold: { value: this.threshold }, knee: { value: this.knee } });
       this.mBlur = mk(BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
-      this.mComposite = mk(COMPOSITE, { tScene: { value: null }, tBloom: { value: null }, strength: { value: this.strength } });
+      this.mComposite = mk(COMPOSITE, { tScene: { value: null }, tBloom: { value: null }, strength: { value: this.strength }, exposure: { value: 1 } });
 
       this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mBright);
       this.quadScene = new THREE.Scene();
@@ -149,6 +171,7 @@
       this.mComposite.uniforms.tScene.value = this.rtScene.texture;
       this.mComposite.uniforms.tBloom.value = this.rtA.texture;
       this.mComposite.uniforms.strength.value = this.strength;
+      this.mComposite.uniforms.exposure.value = r.toneMappingExposure; // chapters retune this
       this._blit(this.mComposite, null);
     }
   }
