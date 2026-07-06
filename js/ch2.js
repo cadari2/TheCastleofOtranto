@@ -11,25 +11,23 @@
   const L = () => OTR.materials.lib;
 
   // ---- local builders ----
+  // Floors and ceilings only. Walls are laid out explicitly in build() from a
+  // single wall plan: the old per-builder walls ran straight across junctions
+  // (sealing the intended path north) while leaving whole room faces open to
+  // the void, so the player could — and had to — walk out of the dungeon.
   function corridorZ(world, cx, z0, z1, w, h) {
     const zc = (z0 + z1) / 2, len = Math.abs(z1 - z0);
     P().floor(world, cx, zc, w + 1, len, 0, L().paving);
-    P().wall(world, cx - w / 2, z0, cx - w / 2, z1, h, 0.6, L().vaultStone);
-    P().wall(world, cx + w / 2, z0, cx + w / 2, z1, h, 0.6, L().vaultStone);
     P().barrelVault(world, cx, z0, z1, w, h, L().vaultStone);
   }
   function corridorX(world, cz, x0, x1, w, h) {
     const xc = (x0 + x1) / 2, len = Math.abs(x1 - x0);
     P().floor(world, xc, cz, len, w + 1, 0, L().paving);
-    P().wall(world, x0, cz - w / 2, x1, cz - w / 2, h, 0.6, L().vaultStone);
-    P().wall(world, x0, cz + w / 2, x1, cz + w / 2, h, 0.6, L().vaultStone);
     P().ceiling(world, xc, cz, len, w + 1, h + 0.2, L().vaultStone);
   }
   function hall(world, cx, cz, w, d, h, cols) {
     P().floor(world, cx, cz, w, d, 0, L().paving);
     P().ceiling(world, cx, cz, w + 1, d + 1, h, L().vaultStone);
-    P().wall(world, cx - w / 2, cz - d / 2, cx - w / 2, cz + d / 2, h, 0.6, L().vaultStone);
-    P().wall(world, cx + w / 2, cz - d / 2, cx + w / 2, cz + d / 2, h, 0.6, L().vaultStone);
     if (cols) {
       for (let ix = -1; ix <= 1; ix += 2)
         for (let iz = -1; iz <= 1; iz += 2)
@@ -66,21 +64,56 @@
       const amb = new THREE.HemisphereLight(0x2a3350, 0x05060a, 0.22); scene.add(amb);
 
       // ---- layout ----
+      // Interior spans (x0..x1 / z0..z1):
+      //   S start hall      -4.5..4.5   /  -8..2
+      //   A north corridor  -2.5..2.5   /   2..17.5
+      //   B cross corridor  -2.5..24.5  /  17.5..22.5   (searcher patrol)
+      //   C cloister hall   24.5..37.5  /  13.5..26.5
+      //   D north corridor  28.5..33.5  /  26.5..43.5
+      //   T trap chamber    25.5..36.5  /  43.5..54.5
       const H = 4.6;
-      hall(world, 0, -3, 9, 10, H, false);       // start chamber
-      corridorZ(world, 0, 2, 20, 5, H);          // north corridor
-      corridorX(world, 20, -2.5, 26, 5, H);      // cross corridor (searcher)
-      hall(world, 31, 20, 13, 13, H + 0.6, true);// cloister hall
+      hall(world, 0, -3, 9, 10, H, false);        // S start chamber
+      corridorZ(world, 0, 2, 17.5, 5, H);         // A north corridor
+      corridorX(world, 20, -2.5, 25, 5, H);       // B cross corridor (searcher)
+      hall(world, 31, 20, 13, 13, H + 0.6, true); // C cloister hall
       moonShaft(world, 31, 22, 2.6);
-      corridorZ(world, 31, 26, 44, 5, H);        // north to trap chamber
-      hall(world, 31, 49, 11, 11, H, false);     // trap-door chamber
+      corridorZ(world, 31, 26.5, 43.5, 5, H);     // D north to trap chamber
+      hall(world, 31, 49, 11, 11, H, false);      // T trap-door chamber
       moonShaft(world, 33, 50, 1.8);
 
+      // Wall plan [x0, z0, x1, z1, height?, baseY?]. Every junction gets a
+      // doorway-width opening; every dead face is sealed so neither the player
+      // nor sightlines escape the vaults.
+      const HC = H + 0.6; // the cloister hall is taller than the corridors
+      const wallRuns = [
+        // S start hall — open north onto A
+        [-4.5, -8, -4.5, 2], [4.5, -8, 4.5, 2], [-4.5, -8, 4.5, -8],
+        [-4.5, 2, -2.5, 2], [2.5, 2, 4.5, 2],
+        // A corridor
+        [-2.5, 2, -2.5, 17.5], [2.5, 2, 2.5, 17.5],
+        // B corridor — open south onto A and east onto C; dead west end capped
+        [2.5, 17.5, 24.5, 17.5], [-2.5, 22.5, 24.5, 22.5], [-2.5, 17.5, -2.5, 22.5],
+        // C cloister hall — doorways west (from B) and north (to D)
+        [24.5, 13.5, 24.5, 17.5, HC], [24.5, 22.5, 24.5, 26.5, HC],
+        [37.5, 13.5, 37.5, 26.5, HC], [24.5, 13.5, 37.5, 13.5, HC],
+        [24.5, 26.5, 28.5, 26.5, HC], [33.5, 26.5, 37.5, 26.5, HC],
+        [24.5, 17.5, 24.5, 22.5, 0.6, H], // lintel over the west doorway
+        [28.5, 26.5, 33.5, 26.5, 0.6, H], // lintel over the north doorway
+        // D corridor
+        [28.5, 26.5, 28.5, 43.5], [33.5, 26.5, 33.5, 43.5],
+        // T trap chamber — open south onto D
+        [25.5, 43.5, 25.5, 54.5], [36.5, 43.5, 36.5, 54.5], [25.5, 54.5, 36.5, 54.5],
+        [25.5, 43.5, 28.5, 43.5], [33.5, 43.5, 36.5, 43.5],
+      ];
+      wallRuns.forEach(([x0, z0, x1, z1, h = H, baseY = 0]) =>
+        P().wall(world, x0, z0, x1, z1, h, 0.6, L().vaultStone, { baseY }));
+
       P().rock(world, -3, -1, 0.5, 0, L().vaultStone);
-      P().rock(world, 2.5, 8, 0.6, 0, L().vaultStone);
-      P().rock(world, 12, 18, 0.5, 0, L().vaultStone);
-      world.torch(0, 2.4, 19, { intensity: 1.6, distance: 9 });
-      world.torch(28, 2.4, 20, { intensity: 1.4, distance: 8 });
+      P().rock(world, 1.7, 8, 0.6, 0, L().vaultStone);   // leans on A's east wall
+      P().rock(world, 12, 18.4, 0.5, 0, L().vaultStone); // leans on B's south wall
+      // torches sit on walls (bracket + flame) instead of floating mid-passage
+      P().wallTorch(world, 0, 2.3, 22.2, Math.PI / 2, { intensity: 1.6, distance: 9 });
+      P().wallTorch(world, 24.8, 2.3, 24.3, 0, { intensity: 1.5, distance: 9 });
 
       OTR.player.eyeHeight = 1.68;
 
@@ -160,7 +193,9 @@
     setTimeout(() => OTR.ui.say([{ name: 'Manfred (distant)', text: 'Talk not to me of necromancers&mdash;I tell you she must be in the castle; I will find her in spite of enchantment!' }]), 900);
 
     const searcher = F().guard(world, 10, 20);
-    searcher.userData.wp = [[2, 20], [24, 20], [24, 23], [2, 20]];
+    // patrol stays inside corridor B (walls at z 17.5 / 22.5) — the old last
+    // waypoint (24, 23) sat beyond the north wall, so he clipped through it
+    searcher.userData.wp = [[2, 20], [23, 20], [23, 21.5], [2, 20]];
     searcher.userData.wpi = 0;
     let caughtCooldown = 0;
     world.addUpdater((dt) => {
