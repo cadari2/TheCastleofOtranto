@@ -63,7 +63,9 @@
       const mv = OTR.input.moveVector();
       if (mv.f || mv.s) {
         const fwd = P.forwardVec();
-        const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+        // Screen-right for a camera looking along +fwd with +Y up is (-fwd.z, 0, fwd.x);
+        // the previous vector pointed screen-left, which flipped A/D strafing.
+        const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
         let dir = new THREE.Vector3()
           .addScaledVector(fwd, mv.f)
           .addScaledVector(right, mv.s);

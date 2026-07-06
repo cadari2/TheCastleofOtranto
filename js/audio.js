@@ -74,7 +74,9 @@
 
   let birdTimer = null;
   function startBirds() {
-    function chirp() {
+    // Emit a single chirp note. Kept separate from scheduling so that a "trill"
+    // is merely one extra note — not another self-perpetuating timer chain.
+    function voice() {
       if (!bed('birds')) return;
       const t = ctx.currentTime;
       const o = ctx.createOscillator(); o.type = 'sine';
@@ -89,8 +91,13 @@
       if (pan) { pan.pan.value = Math.random() * 2 - 1; g.connect(pan); pan.connect(ambientGain); }
       else g.connect(ambientGain);
       o.start(t); o.stop(t + 0.3);
-      // occasional trill
-      if (Math.random() < 0.4) setTimeout(chirp, 90 + Math.random() * 90);
+    }
+    // Exactly one live scheduling chain: each chirp queues one successor.
+    function chirp() {
+      if (!bed('birds')) return;
+      voice();
+      // occasional trill: a quick second note only — it does not schedule more
+      if (Math.random() < 0.4) setTimeout(voice, 90 + Math.random() * 90);
       birdTimer = setTimeout(chirp, 500 + Math.random() * 2600);
     }
     chirp();

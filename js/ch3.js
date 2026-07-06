@@ -121,6 +121,10 @@
     OTR.audio.stinger('rise');
     await OTR.ui.fadeOut(1500);
     enterInterior(world, ctx, false);
+    // enterInterior rebuilds the scene while black; fade back in so play
+    // resumes. (The resume-from-checkpoint path fades in via startChapter,
+    // but this mid-chapter transition must do it itself.)
+    await OTR.ui.fadeIn(1400);
   }
 
   // ---------------- the castle interior ----------------
