@@ -22,9 +22,17 @@
 
     // ---------- lifecycle ----------
     dispose() {
+      this.disposed = true; // lets zombie animation loops (walkTo, etc.) bail out
       this.scene.traverse(o => {
         if (o.geometry) o.geometry.dispose && o.geometry.dispose();
       });
+      // Per-chapter environment / background maps are freshly built canvas
+      // textures (materials.makeEnv, scene.background colours or textures);
+      // free them so they don't accumulate on the GPU across chapters. Shared
+      // library materials/textures are reused every chapter and left alone.
+      const env = this.scene.environment, bg = this.scene.background;
+      if (env && env.isTexture && !(env.userData && env.userData.shared)) env.dispose();
+      if (bg && bg.isTexture && !(bg.userData && bg.userData.shared)) bg.dispose();
       this.disposables.forEach(d => { try { d(); } catch (e) {} });
     }
 
@@ -88,6 +96,7 @@
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 220;
       sun.shadow.bias = -0.0006;
       sun.shadow.normalBias = 0.03;
+      sun.shadow.radius = 3.5; // softer PCF penumbra instead of hard edges
       this.scene.add(sun);
       this.scene.add(sun.target);
       const hemi = new THREE.HemisphereLight(ambientColor || 0x9fb8d8, 0x30322c, ambientInt != null ? ambientInt : 0.5);
@@ -107,17 +116,21 @@
       light.position.set(0, 0, 0);
       g.add(light);
 
+      // Scale flame + glow sprites to the light's reach so a small candle
+      // doesn't wear the same big halo as a wall torch (which bloom then blows
+      // out into a giant orb).
+      const sz = OTR.clamp((opts.distance || 12) / 12, 0.5, 1.25);
       const flame = new THREE.Sprite(new THREE.SpriteMaterial({
         map: OTR.materials.lib.flameTex, color: 0xffffff, transparent: true,
         blending: THREE.AdditiveBlending, depthWrite: false, fog: false
       }));
-      flame.scale.set(0.5, 0.8, 1);
+      flame.scale.set(0.5 * sz, 0.8 * sz, 1);
       g.add(flame);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
         map: OTR.materials.lib.glowTex, color: color, transparent: true,
         blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5, fog: false
       }));
-      glow.scale.set(3, 3, 1);
+      glow.scale.set(3 * sz, 3 * sz, 1);
       g.add(glow);
 
       this.scene.add(g);
@@ -129,7 +142,7 @@
         if (!rec.on) return;
         const f = 0.78 + 0.22 * (Math.sin(e * 11 + seed) * 0.5 + Math.sin(e * 23 + seed * 2) * 0.5);
         light.intensity = base * f;
-        flame.scale.set(0.42 + f * 0.16, 0.7 + f * 0.28, 1);
+        flame.scale.set((0.42 + f * 0.16) * sz, (0.7 + f * 0.28) * sz, 1);
         flame.material.rotation = Math.sin(e * 7 + seed) * 0.14;
         glow.material.opacity = 0.35 + f * 0.25;
       });

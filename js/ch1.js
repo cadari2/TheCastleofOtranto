@@ -22,13 +22,15 @@
       scene.environment = OTR.materials.makeEnv(0x6f95c4, 0xbcd0e2, 0xd8c9a4);
       world._dayEnv = scene.environment;
       world.setFog(0xcdbf9e, 40, 190);
-      const sun = world.sun(0xffe9c0, 3.1, new THREE.Vector3(28, 46, 38), 0xbcd0ea, 0.9);
+      const sun = world.sun(0xffe6b4, 2.5, new THREE.Vector3(28, 46, 38), 0xbcd0ea, 0.55);
       sun.target.position.set(0, 0, 0);
       // sky fill from the opposite side so shadowed faces are not black
-      const fill = new THREE.DirectionalLight(0x9fb6d8, 0.5);
+      const fill = new THREE.DirectionalLight(0x9fb6d8, 0.32);
       fill.position.set(-30, 24, -20); scene.add(fill);
-      OTR.game.renderer.toneMappingExposure = 1.16;
-      document.getElementById('vignette').style.opacity = 0.45;
+      // Exposure pulled well under 1 so the pale courtyard paving keeps its
+      // detail instead of clipping to white under the strong sun + IBL.
+      OTR.game.renderer.toneMappingExposure = 0.95;
+      document.getElementById('vignette').style.opacity = 0.5;
 
       // ---- ground ----
       P().groundPlane(world, 600, L().grass, -0.04);

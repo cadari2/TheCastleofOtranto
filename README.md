@@ -171,3 +171,11 @@ under their own permissive terms, which are compatible with GPLv3.
 - Story: **Horace Walpole**, *The Castle of Otranto* (1764), public domain.
 - Game, code, world, and original assets: licensed **GPLv3**.
 - Engine: **Three.js** (MIT). Textures: **ambientCG** (CC0).
+
+### Support
+
+This game exists because Walpole's text was freely available. If you'd like
+to support that work, please direct any tips or donations to
+[Project Gutenberg](https://www.gutenberg.org/donate/) rather than to us —
+it's the archive that keeps this and thousands of other public-domain works
+free for everyone.

@@ -6,7 +6,7 @@
     running: false, paused: false,
     chapter: 0, beat: null,
     world: null, scene: null, camera: null, renderer: null,
-    ctx: null, transitioning: false
+    ctx: null, transitioning: false, postfx: null
   };
 
   const SAVE_KEY = 'otranto.save.v1';
@@ -36,11 +36,26 @@
     G.camera = camera;
     OTR.player.camera = camera;
 
+    // Optional bloom post-processing. If it fails to initialise for any reason
+    // we simply render straight to the canvas (G.postfx stays null).
+    try {
+      if (OTR.PostFX) G.postfx = new OTR.PostFX(renderer);
+    } catch (e) { console.warn('post-processing disabled:', e); G.postfx = null; }
+
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      if (G.postfx) {
+        const s = renderer.getDrawingBufferSize(new THREE.Vector2());
+        G.postfx.setSize(s.x, s.y);
+      }
     });
+  }
+
+  function renderScene() {
+    if (G.postfx) G.postfx.render(G.scene, G.camera);
+    else G.renderer.render(G.scene, G.camera);
   }
 
   function initGrain() {
@@ -86,12 +101,12 @@
     G.chapter = n; G.beat = beat;
     persist();
 
-    // teardown old
+    // teardown old (geometry disposal is deferred until the screen is black —
+    // see below — so the render loop cannot re-upload buffers we are freeing).
     OTR.audio.stopAmbience();
     OTR.events.clear();
     OTR.ui.resetDialogue();
     OTR.ui.init();
-    if (G.world) { G.world.dispose(); }
     OTR.player.frozen = false;
     OTR.ui.hideAllHud();
     OTR.ui.toast('', 0);
@@ -101,6 +116,19 @@
     OTR.game.renderer.toneMappingExposure = 1.05;
 
     await OTR.ui.fadeOut(600);
+
+    // Dispose the previous world now, while the screen is faded to black. The
+    // scene reference is dropped *first* and no `await` runs before the new
+    // scene is assigned, so the animation loop cannot render (and thus
+    // re-upload to the GPU) the geometries we are about to free. Disposing
+    // before the fade — as this used to — left `transitioning` true while the
+    // loop kept rendering the old scene, re-registering every freed geometry as
+    // an orphan and leaking GPU memory until the WebGL context was lost.
+    if (G.world) {
+      const old = G.world;
+      G.world = null; G.scene = null;
+      old.dispose();
+    }
 
     // new scene/world
     const scene = new THREE.Scene();
@@ -254,9 +282,9 @@
 
       OTR.player.update(dt);
       G.world.update(dt);
-      G.renderer.render(G.scene, G.camera);
+      renderScene();
     } else if (G.scene && G.camera) {
-      G.renderer.render(G.scene, G.camera);
+      renderScene();
     }
   }
 
@@ -323,9 +351,15 @@
     document.getElementById('view').addEventListener('click', () => {
       if (G.running && !G.paused && !OTR.input.locked && !G.transitioning) OTR.input.requestLock();
     });
-    OTR.events.on('pointerlock', (locked) => {
+    // Losing pointer lock mid-play (Esc, alt-tab, focus loss, or a browser that
+    // auto-releases it) must pause the game rather than silently killing mouse
+    // look. This is bound to the native event — not OTR.events — because
+    // startChapter() calls OTR.events.clear() on every load, which previously
+    // destroyed this handler after the first chapter and left the player
+    // unable to look around with no way to recover but to click the canvas.
+    document.addEventListener('pointerlockchange', () => {
+      const locked = (document.pointerLockElement === document.getElementById('view'));
       if (!locked && G.running && !G.paused && !G.transitioning && !OTR.ui.isDialogue()) {
-        // browser released lock (usually Esc) -> pause
         pauseGame();
       }
     });
