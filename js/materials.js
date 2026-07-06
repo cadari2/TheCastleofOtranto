@@ -246,6 +246,214 @@
     return tex;
   };
 
+  // ---------------------------------------------------------------------
+  // Procedural equirectangular sky (2048x1024 canvas): gradient atmosphere,
+  // sun/moon disc with halo, layered clouds, stars, horizon haze. Used both
+  // as the visible scene.background and — run through PMREMGenerator — as
+  // proper image-based lighting in scene.environment, replacing the old
+  // 256px gradient env map.
+  // ---------------------------------------------------------------------
+
+  // direction (unit vector) -> equirect canvas position, matching three's
+  // equirectUv(): u = atan(z, x)/2pi + 0.5, v = asin(y)/pi + 0.5. Canvas
+  // y runs downward while v runs upward, so y = (1 - v) * H.
+  function dirToCanvas(dir, W, H) {
+    const d = dir.clone().normalize();
+    const u = Math.atan2(d.z, d.x) / (Math.PI * 2) + 0.5;
+    const v = Math.asin(OTR.clamp(d.y, -1, 1)) / Math.PI + 0.5;
+    return { x: u * W, y: (1 - v) * H };
+  }
+
+  // Draw at x and both wrap neighbours so radial gradients survive the seam.
+  function wrapped(ctx, W, drawAt) { [0, -W, W].forEach(off => drawAt(off)); }
+
+  M.makeSkyTexture = function (opts = {}) {
+    const W = 2048, H = 1024;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const col = (v) => '#' + new THREE.Color(v).getHexString();
+    const horizonY = H / 2;
+
+    // ---- atmosphere gradient (zenith -> horizon -> ground) ----
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0.0, col(opts.top != null ? opts.top : 0x2f5d96));
+    g.addColorStop(0.34, col(opts.high != null ? opts.high : 0x6f95c4));
+    g.addColorStop(0.5, col(opts.horizon != null ? opts.horizon : 0xd8c9a4));
+    g.addColorStop(0.54, col(opts.horizon != null ? opts.horizon : 0xd8c9a4));
+    g.addColorStop(0.7, col(opts.ground != null ? opts.ground : 0x4a4436));
+    g.addColorStop(1.0, col(opts.groundDeep != null ? opts.groundDeep : (opts.ground != null ? opts.ground : 0x2c2820)));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    const rnd = OTR.rng(opts.seed || 11);
+
+    // ---- stars (night) ----
+    if (opts.stars) {
+      for (let i = 0; i < 900 * opts.stars; i++) {
+        const x = rnd() * W, y = Math.pow(rnd(), 1.4) * horizonY * 0.96;
+        const a = 0.25 + rnd() * 0.75, r = rnd() < 0.06 ? 1.6 : 0.9;
+        ctx.fillStyle = `rgba(${220 + rnd() * 35 | 0},${220 + rnd() * 35 | 0},255,${a})`;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      }
+      // milky-way style faint band
+      ctx.save();
+      ctx.translate(W * 0.5, horizonY * 0.5); ctx.rotate(-0.5);
+      const mw = ctx.createLinearGradient(0, -90, 0, 90);
+      mw.addColorStop(0, 'rgba(150,170,220,0)');
+      mw.addColorStop(0.5, 'rgba(150,170,220,0.05)');
+      mw.addColorStop(1, 'rgba(150,170,220,0)');
+      ctx.fillStyle = mw; ctx.fillRect(-W, -90, W * 2, 180);
+      ctx.restore();
+    }
+
+    // ---- sun / moon ----
+    if (opts.sunDir) {
+      const p = dirToCanvas(opts.sunDir, W, H);
+      const sunCol = new THREE.Color(opts.sunColor != null ? opts.sunColor : 0xfff2cc);
+      const r255 = (cc, a) => `rgba(${cc.r * 255 | 0},${cc.g * 255 | 0},${cc.b * 255 | 0},${a})`;
+      const haloR = opts.haloR || 320, discR = opts.discR || 26;
+      wrapped(ctx, W, (off) => {
+        // broad halo
+        let hg = ctx.createRadialGradient(p.x + off, p.y, discR, p.x + off, p.y, haloR);
+        hg.addColorStop(0, r255(sunCol, opts.moon ? 0.30 : 0.55));
+        hg.addColorStop(0.4, r255(sunCol, opts.moon ? 0.10 : 0.22));
+        hg.addColorStop(1, r255(sunCol, 0));
+        ctx.fillStyle = hg;
+        ctx.fillRect(p.x + off - haloR, p.y - haloR, haloR * 2, haloR * 2);
+        // disc
+        let dg = ctx.createRadialGradient(p.x + off, p.y, 0, p.x + off, p.y, discR);
+        dg.addColorStop(0, 'rgba(255,255,255,1)');
+        dg.addColorStop(0.7, r255(sunCol, 1));
+        dg.addColorStop(1, r255(sunCol, 0));
+        ctx.fillStyle = dg;
+        ctx.beginPath(); ctx.arc(p.x + off, p.y, discR, 0, Math.PI * 2); ctx.fill();
+        if (opts.moon) { // mare blotches so it reads as a moon, not a lamp
+          ctx.fillStyle = 'rgba(120,130,160,0.30)';
+          ctx.beginPath(); ctx.arc(p.x + off - discR * 0.25, p.y - discR * 0.1, discR * 0.28, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(p.x + off + discR * 0.2, p.y + discR * 0.28, discR * 0.2, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(p.x + off + discR * 0.3, p.y - discR * 0.3, discR * 0.16, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+    }
+
+    // ---- clouds: layered soft streaks, lit toward the sun ----
+    if (opts.clouds) {
+      const sunP = opts.sunDir ? dirToCanvas(opts.sunDir, W, H) : { x: W * 0.7, y: H * 0.3 };
+      const lit = new THREE.Color(opts.cloudLit != null ? opts.cloudLit : 0xfff0d8);
+      const shade = new THREE.Color(opts.cloudShade != null ? opts.cloudShade : 0xb8c4d8);
+      const n = 140 * opts.clouds;
+      for (let i = 0; i < n; i++) {
+        // clouds hug a band above the horizon; higher = sparser
+        const y = horizonY * (0.30 + Math.pow(rnd(), 0.65) * 0.66);
+        const x = rnd() * W;
+        const scale = 0.5 + (y / horizonY) * 1.6;          // perspective: lower = bigger
+        const rx = (40 + rnd() * 130) * scale, ry = rx * (0.16 + rnd() * 0.12);
+        // proximity to sun (wrapped) decides lit vs shaded tint
+        let dx = Math.abs(x - sunP.x); dx = Math.min(dx, W - dx);
+        const t = OTR.clamp(1 - Math.hypot(dx, (y - sunP.y) * 2) / (W * 0.5), 0, 1);
+        const cc = shade.clone().lerp(lit, t * t);
+        const alpha = (0.045 + rnd() * 0.075) * (opts.cloudAlpha || 1);
+        wrapped(ctx, W, (off) => {
+          const cg = ctx.createRadialGradient(x + off, y, 1, x + off, y, rx);
+          cg.addColorStop(0, `rgba(${cc.r * 255 | 0},${cc.g * 255 | 0},${cc.b * 255 | 0},${alpha})`);
+          cg.addColorStop(1, `rgba(${cc.r * 255 | 0},${cc.g * 255 | 0},${cc.b * 255 | 0},0)`);
+          ctx.fillStyle = cg;
+          ctx.save(); ctx.translate(x + off, y); ctx.scale(1, ry / rx); ctx.translate(-(x + off), -y);
+          ctx.fillRect(x + off - rx, y - rx, rx * 2, rx * 2);
+          ctx.restore();
+        });
+      }
+    }
+
+    // ---- horizon haze band ----
+    const hazeA = opts.haze != null ? opts.haze : 0.5;
+    if (hazeA > 0) {
+      const hz = ctx.createLinearGradient(0, horizonY * 0.62, 0, horizonY * 1.2);
+      const hcol = new THREE.Color(opts.hazeColor != null ? opts.hazeColor : (opts.horizon != null ? opts.horizon : 0xd8c9a4));
+      hz.addColorStop(0, `rgba(${hcol.r * 255 | 0},${hcol.g * 255 | 0},${hcol.b * 255 | 0},0)`);
+      hz.addColorStop(0.62, `rgba(${hcol.r * 255 | 0},${hcol.g * 255 | 0},${hcol.b * 255 | 0},${0.5 * hazeA})`);
+      hz.addColorStop(1, `rgba(${hcol.r * 255 | 0},${hcol.g * 255 | 0},${hcol.b * 255 | 0},0)`);
+      ctx.fillStyle = hz; ctx.fillRect(0, horizonY * 0.62, W, horizonY * 0.6);
+    }
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+
+  // Run an equirect texture through PMREM and install it as the scene's
+  // environment; registers cleanup on the world. envIntensity scales IBL on
+  // every material in the scene after the chapter has built (call last, or
+  // it is applied lazily on next frame via a one-shot updater).
+  M.applyEnvironment = function (world, tex, envIntensity) {
+    const pmrem = new THREE.PMREMGenerator(world.renderer);
+    const rt = pmrem.fromEquirectangular(tex);
+    pmrem.dispose();
+    rt.texture.userData.shared = true; // world.dispose: skip; we dispose the RT
+    world.scene.environment = rt.texture;
+    world.disposables.push(() => { rt.dispose(); });
+    if (envIntensity != null) {
+      // apply after build completes (materials are shared across chapters;
+      // each chapter sets its own value, so mutation is safe)
+      let done = false;
+      world.addUpdater(() => {
+        if (done) return; done = true;
+        world.scene.traverse(o => {
+          const m = o.material;
+          if (m && m.isMeshStandardMaterial) m.envMapIntensity = envIntensity;
+        });
+      });
+    }
+    return rt.texture;
+  };
+
+  // One call for exterior chapters: build sky, set as visible background,
+  // and light the scene with it.
+  M.sky = function (world, opts = {}) {
+    const tex = M.makeSkyTexture(opts);
+    tex.userData.shared = true; // disposed via world.disposables below
+    if (opts.background !== false) {
+      world.scene.background = tex;
+      if (opts.backgroundIntensity != null) world.scene.backgroundIntensity = opts.backgroundIntensity;
+    }
+    M.applyEnvironment(world, tex, opts.envIntensity);
+    world.disposables.push(() => tex.dispose());
+    return tex;
+  };
+
+  // Interiors: no visible sky, but the environment map still shapes every
+  // material response. Gradient plus a few painted glow spots (torch warmth,
+  // a cold light-well) so metals and marble pick up believable reflections.
+  M.interiorEnv = function (world, opts = {}) {
+    const W = 512, H = 256;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    const col = (v) => '#' + new THREE.Color(v).getHexString();
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, col(opts.top != null ? opts.top : 0x1c2230));
+    g.addColorStop(0.5, col(opts.mid != null ? opts.mid : 0x11131a));
+    g.addColorStop(1, col(opts.bottom != null ? opts.bottom : 0x07070a));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    (opts.glows || []).forEach(gl => {
+      const x = (gl.u != null ? gl.u : 0.5) * W, y = (gl.v != null ? gl.v : 0.4) * H;
+      const r = (gl.r != null ? gl.r : 0.1) * W;
+      const cc = new THREE.Color(gl.color != null ? gl.color : 0xffb04a);
+      const a = gl.intensity != null ? gl.intensity : 0.5;
+      wrapped(ctx, W, (off) => {
+        const rg = ctx.createRadialGradient(x + off, y, 1, x + off, y, r);
+        rg.addColorStop(0, `rgba(${cc.r * 255 | 0},${cc.g * 255 | 0},${cc.b * 255 | 0},${a})`);
+        rg.addColorStop(1, `rgba(${cc.r * 255 | 0},${cc.g * 255 | 0},${cc.b * 255 | 0},0)`);
+        ctx.fillStyle = rg; ctx.fillRect(x + off - r, y - r, r * 2, r * 2);
+      });
+    });
+    const tex = new THREE.CanvasTexture(c);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    M.applyEnvironment(world, tex, opts.envIntensity);
+    world.disposables.push(() => tex.dispose());
+    return tex;
+  };
+
   // sky: big gradient dome via vertex-color trick
   M.makeSky = function (topColor, midColor, bottomColor) {
     const geo = new THREE.SphereGeometry(900, 24, 16);

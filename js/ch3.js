@@ -23,15 +23,19 @@
     build(world, ctx) {
       const scene = world.scene;
       // ---- night sky & light ----
-      scene.add(OTR.materials.makeSky(0x0a1226, 0x1a2740, 0x20263a));
-      scene.environment = OTR.materials.makeEnv(0x24304e, 0x141a2c, 0x0a0c14);
+      const moonDir = new THREE.Vector3(-40, 46, -30).normalize();
+      OTR.materials.sky(world, {
+        seed: 7,
+        top: 0x060b18, high: 0x14213a, horizon: 0x27324c, ground: 0x0a0c12, groundDeep: 0x05060a,
+        sunDir: moonDir, sunColor: 0xdfe6ff, moon: true, discR: 34, haloR: 260,
+        stars: 1, clouds: 0.5, cloudLit: 0x9fb0d8, cloudShade: 0x232c42, cloudAlpha: 0.8,
+        haze: 0.5, hazeColor: 0x1d2740, envIntensity: 0.7
+      });
       world.setFog(0x0c1020, 20, 150);
       const moon = world.sun(0x9fb0d8, 0.9, new THREE.Vector3(-40, 46, -30), 0x2a3860, 0.32);
       moon.shadow.camera.far = 260;
       OTR.game.renderer.toneMappingExposure = 1.06;
       document.getElementById('vignette').style.opacity = 0.78;
-      // the moon itself
-      addMoon(world, -120, 90, -110);
 
       world.hardFloor = true;
       OTR.player.eyeHeight = 1.68;
@@ -48,13 +52,6 @@
       setTimeout(() => runCellIntro(world, ctx), 600);
     }
   };
-
-  function addMoon(world, x, y, z) {
-    const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xdfe6ff, transparent: true, fog: false, blending: THREE.AdditiveBlending, depthWrite: false }));
-    moon.position.set(x, y, z); moon.scale.set(40, 40, 1); world.add(moon);
-    const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xffffff, fog: false, depthWrite: false }));
-    disc.position.set(x, y, z); disc.scale.set(12, 12, 1); world.add(disc);
-  }
 
   // ---------------- the tower cell ----------------
   function buildCell(world, ctx) {

@@ -17,13 +17,18 @@
 
     build(world, ctx) {
       const scene = world.scene;
-      scene.add(OTR.materials.makeSky(0x08101f, 0x162238, 0x1c2a44));
-      scene.environment = OTR.materials.makeEnv(0x243252, 0x141c30, 0x090b12);
+      const moonDir = new THREE.Vector3(-30, 40, 20).normalize();
+      OTR.materials.sky(world, {
+        seed: 13,
+        top: 0x050a16, high: 0x101c33, horizon: 0x1f2c48, ground: 0x070a10, groundDeep: 0x04050a,
+        sunDir: moonDir, sunColor: 0xdfe8ff, moon: true, discR: 30, haloR: 300,
+        stars: 0.9, clouds: 0.65, cloudLit: 0x9fb2dc, cloudShade: 0x1e2840, cloudAlpha: 0.9,
+        haze: 0.6, hazeColor: 0x1a2440, envIntensity: 0.7
+      });
       world.setFog(0x0b1220, 14, 120);
       const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34);
       OTR.game.renderer.toneMappingExposure = 1.05;
       document.getElementById('vignette').style.opacity = 0.8;
-      addMoon(world, 90, 80, 60);
 
       // ---- terrain: forest floor sloping down to a beach (+Z = seaward) ----
       const shoreZ = 78;
@@ -128,13 +133,6 @@
       });
     }
   };
-
-  function addMoon(world, x, y, z) {
-    const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xdfe6ff, transparent: true, fog: false, blending: THREE.AdditiveBlending, depthWrite: false }));
-    moon.position.set(x, y, z); moon.scale.set(46, 46, 1); world.add(moon);
-    const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xffffff, fog: false, depthWrite: false }));
-    disc.position.set(x, y, z); disc.scale.set(13, 13, 1); world.add(disc);
-  }
 
   function buildCaves(world, cx, cz) {
     // a headland ridge with cave openings

@@ -18,9 +18,13 @@
     build(world, ctx) {
       const scene = world.scene;
       // ---- sky & light: warm late afternoon ----
-      scene.add(OTR.materials.makeSky(0x3f6ea5, 0x9fc0dd, 0xdccfa8));
-      scene.environment = OTR.materials.makeEnv(0x6f95c4, 0xbcd0e2, 0xd8c9a4);
-      world._dayEnv = scene.environment;
+      const sunDir = new THREE.Vector3(28, 46, 38).normalize();
+      OTR.materials.sky(world, {
+        seed: 3,
+        top: 0x2a5a9c, high: 0x86aad2, horizon: 0xe6d2a0, ground: 0x5c5844, groundDeep: 0x34301f,
+        sunDir, sunColor: 0xffeccb, clouds: 0.9, cloudLit: 0xfff3da, cloudShade: 0xb9c6da,
+        haze: 0.8, envIntensity: 0.55
+      });
       world.setFog(0xcdbf9e, 40, 190);
       const sun = world.sun(0xffe6b4, 2.5, new THREE.Vector3(28, 46, 38), 0xbcd0ea, 0.55);
       sun.target.position.set(0, 0, 0);
@@ -146,7 +150,7 @@
     ctx.checkpoint('confined');
     // dim the world to a claustrophobic gloom under the great helm
     world.setFog(0x0e0c0a, 3, 32);
-    world.scene.environment = OTR.materials.makeEnv(0x2a2c34, 0x1a1a1f, 0x0c0c10);
+    OTR.materials.interiorEnv(world, { top: 0x2a2c34, mid: 0x1a1a1f, bottom: 0x0c0c10, envIntensity: 0.7 });
     if (world.sunLight) world.sunLight.intensity = 0.2;
     if (world.hemi) { world.hemi.intensity = 0.35; world.hemi.color.set(0x50607a); world.hemi.groundColor.set(0x1a1510); }
     OTR.game.renderer.toneMappingExposure = 1.0;
