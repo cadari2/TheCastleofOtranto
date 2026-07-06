@@ -210,36 +210,43 @@
     }
     // brim
     g.add(mesh(new THREE.CylinderGeometry(2.3, 2.3, 0.25, 24), steel, 0, -1.0, 0));
-    // black plumes (sable feathers) — a splayed crest, not a spike
-    const plumeMat = new THREE.MeshStandardMaterial({ color: 0x1a1620, roughness: 0.85, metalness: 0.1 });
-    const N = 74;
+    // black plumes (sable feathers): a crest of curved quills that spring from
+    // the crown, rise, and droop at the tips — a flowing plume, not a spike-ball.
+    const plumeMat = new THREE.MeshStandardMaterial({ color: 0x151119, roughness: 0.82, metalness: 0.08, side: THREE.DoubleSide });
+    const N = 46;
     for (let i = 0; i < N; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const rr = 0.15 + Math.random() * 0.7;          // base ring
-      const h = 2.6 + Math.random() * 3.2;
+      const a = (i / N) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+      const rr = 0.1 + Math.random() * 0.55;           // where it roots on the crown
+      const len = 2.8 + Math.random() * 2.6;
       const bx = Math.cos(a) * rr, bz = Math.sin(a) * rr;
-      const pl = mesh(new THREE.ConeGeometry(0.16 + Math.random() * 0.12, h, 5), plumeMat, bx, 3.0, bz);
-      // tilt each plume outward from vertical so the crest fans wide
-      const tilt = 0.35 + rr * 0.85 + Math.random() * 0.25;
-      pl.rotation.z = -Math.cos(a) * tilt;
-      pl.rotation.x = Math.sin(a) * tilt;
-      // lift so the base sits at the crown and the plume arcs up-and-out
-      pl.position.y = 3.0 + Math.cos(tilt) * h / 2;
-      pl.position.x += Math.cos(a) * Math.sin(tilt) * h / 2;
-      pl.position.z += Math.sin(a) * Math.sin(tilt) * h / 2;
-      pl.castShadow = true;
-      g.add(pl);
-      pl.userData.baseRot = { x: pl.rotation.x, z: pl.rotation.z, a };
+      // outward lean grows with root radius so inner feathers stand tall and
+      // outer ones sweep wide; every feather droops back down at the tip.
+      const lean = 0.25 + rr * 1.1 + Math.random() * 0.2;
+      const ox = Math.cos(a), oz = Math.sin(a);
+      // Curve is built relative to the feather's root so the quill can sway
+      // about where it springs from the crown.
+      const p0 = new THREE.Vector3(0, 0, 0);
+      const p1 = new THREE.Vector3(ox * len * 0.45 * lean, len * 0.62, oz * len * 0.45 * lean);
+      const p2 = new THREE.Vector3(ox * len * (0.7 + lean * 0.5), len * 0.72 - len * 0.28, oz * len * (0.7 + lean * 0.5));
+      const curve = new THREE.QuadraticBezierCurve3(p0, p1, p2);
+      const tube = new THREE.TubeGeometry(curve, 12, 0.12, 6, false);
+      const feather = new THREE.Group();
+      feather.position.set(bx, 3.0, bz);
+      const pl = new THREE.Mesh(tube, plumeMat);
+      pl.castShadow = false; // 46 quills in the shadow pass isn't worth it; the dome casts
+      feather.add(pl);
+      g.add(feather);
+      feather.userData.baseRot = { a, phase: Math.random() * Math.PI * 2 };
     }
     g.scale.setScalar(scale);
     world.add(g);
-    // gentle plume sway updater
+    // gentle plume sway updater — each feather nods from its root
     world.addUpdater((dt, e) => {
       g.children.forEach(c => {
         if (c.userData.baseRot) {
           const b = c.userData.baseRot;
-          c.rotation.x = b.x + Math.sin(e * 1.1 + b.a * 3) * 0.06;
-          c.rotation.z = b.z + Math.cos(e * 0.9 + b.a * 2) * 0.06;
+          c.rotation.x = Math.sin(e * 1.1 + b.phase) * 0.05;
+          c.rotation.z = Math.cos(e * 0.9 + b.phase) * 0.05;
         }
       });
     });

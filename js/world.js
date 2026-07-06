@@ -96,6 +96,7 @@
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 220;
       sun.shadow.bias = -0.0006;
       sun.shadow.normalBias = 0.03;
+      sun.shadow.radius = 3.5; // softer PCF penumbra instead of hard edges
       this.scene.add(sun);
       this.scene.add(sun.target);
       const hemi = new THREE.HemisphereLight(ambientColor || 0x9fb8d8, 0x30322c, ambientInt != null ? ambientInt : 0.5);
