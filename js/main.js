@@ -6,7 +6,7 @@
     running: false, paused: false,
     chapter: 0, beat: null,
     world: null, scene: null, camera: null, renderer: null,
-    ctx: null, transitioning: false
+    ctx: null, transitioning: false, postfx: null
   };
 
   const SAVE_KEY = 'otranto.save.v1';
@@ -36,11 +36,26 @@
     G.camera = camera;
     OTR.player.camera = camera;
 
+    // Optional bloom post-processing. If it fails to initialise for any reason
+    // we simply render straight to the canvas (G.postfx stays null).
+    try {
+      if (OTR.PostFX) G.postfx = new OTR.PostFX(renderer);
+    } catch (e) { console.warn('post-processing disabled:', e); G.postfx = null; }
+
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      if (G.postfx) {
+        const s = renderer.getDrawingBufferSize(new THREE.Vector2());
+        G.postfx.setSize(s.x, s.y);
+      }
     });
+  }
+
+  function renderScene() {
+    if (G.postfx) G.postfx.render(G.scene, G.camera);
+    else G.renderer.render(G.scene, G.camera);
   }
 
   function initGrain() {
@@ -267,9 +282,9 @@
 
       OTR.player.update(dt);
       G.world.update(dt);
-      G.renderer.render(G.scene, G.camera);
+      renderScene();
     } else if (G.scene && G.camera) {
-      G.renderer.render(G.scene, G.camera);
+      renderScene();
     }
   }
 
