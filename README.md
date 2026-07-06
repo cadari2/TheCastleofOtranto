@@ -1,3 +1,4 @@
+v 0.0.3
 # The Castle of Otranto — a playable 3D Gothic tale
 
 A browser-playable, first-person 3D adaptation of Horace Walpole's *The Castle
