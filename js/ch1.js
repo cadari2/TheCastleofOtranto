@@ -73,6 +73,12 @@
         P().tree(world, x, z, 0.7 + Math.random() * 0.7, -0.04);
       }
 
+      // meadow grass beyond the north gate, along the church approach
+      P().grassField(world, { x0: -28, x1: 28, z0: R + 1.5, z1: R + 38 }, 2200, {
+        yOffset: -0.04,
+        skip: (x, z) => Math.abs(x) < 2.4 || (Math.abs(x) < 9 && z > R + 26) // walked path + church forecourt
+      });
+
       // pollen motes in the sun
       world.particles(90, { x0: -R, x1: R, y0: 0.5, y1: 8, z0: -R, z1: R }, 0xfff0c8, 0.06, 0.15);
 

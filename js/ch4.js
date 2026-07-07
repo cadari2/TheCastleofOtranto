@@ -68,6 +68,12 @@
         if (z > shoreZ - 6) continue;               // no trees on the beach
         P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12);
       }
+      // undergrowth: swaying grass tufts along the wood (thins near the beach)
+      P().grassField(world, { x0: -55, x1: 55, z0: -20, z1: 62 }, 2000, {
+        color: 0xb8c2d4, height: 0.38, width: 0.75, // moonlit tufts, low and soft
+        skip: (x, z) => (Math.abs(x) < 3 && z < 60) || z > shoreZ - 14
+      });
+
       // scattered mossy boulders
       for (let i = 0; i < 24; i++) {
         const x = (rng() - 0.5) * 160, z = -10 + rng() * 80;
