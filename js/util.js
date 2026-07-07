@@ -4,6 +4,10 @@ window.OTR = window.OTR || {};
 
 (function (OTR) {
 
+  // Single shared version constant: shown on the title screen and echoed in
+  // README / the index.html cache-busting query.
+  OTR.VERSION = '0.1';
+
   OTR.clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   OTR.lerp = (a, b, t) => a + (b - a) * t;
   OTR.smoothstep = (a, b, t) => {

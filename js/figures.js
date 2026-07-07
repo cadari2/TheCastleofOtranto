@@ -17,14 +17,16 @@
   const V2 = (x, y) => new THREE.Vector2(x, y);
 
   // A lathe-turned robe profile: flared hem, nipped waist, filled chest and
-  // shoulders, tapering to a neck. Revolving this reads as a standing body in
-  // heavy cloth instead of a plain cone. Returns a BufferGeometry.
+  // shoulders, tapering to a neck — then a subtle cloth-fold undulation is
+  // pressed into the skirt so the cloth hangs in gathers instead of
+  // revolving perfectly. Returns a BufferGeometry.
   function robeGeometry(H) {
     const R = 0.44; // hem radius
     const p = [
       V2(0.00, 0.00),          // closed base at the floor
       V2(R * 0.96, 0.015),
       V2(R, 0.10),             // hem outer
+      V2(R * 0.90, H * 0.22),
       V2(R * 0.88, H * 0.30),  // skirt
       V2(R * 0.70, H * 0.44),
       V2(R * 0.60, H * 0.50),  // waist
@@ -36,7 +38,21 @@
       V2(0.16, H * 0.85),      // neck
       V2(0.13, H * 0.87),
     ];
-    return new THREE.LatheGeometry(p, 24);
+    const geo = new THREE.LatheGeometry(p, 28);
+    // cloth folds: gentle radial gathers, strongest at the hem, fading out
+    // by the waist so the torso stays clean
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const r = Math.hypot(x, z);
+      if (r < 0.02) continue;
+      const a = Math.atan2(z, x);
+      const fade = OTR.clamp(1 - y / (H * 0.5), 0, 1);
+      const fold = 1 + (0.045 * Math.sin(a * 7) + 0.02 * Math.sin(a * 3 + 1.1)) * fade;
+      pos.setX(i, x * fold); pos.setZ(i, z * fold);
+    }
+    geo.computeVertexNormals();
+    return geo;
   }
 
   // Build a cloaked figure. opts: {color, height, hood, armor, torch, face}
@@ -78,15 +94,29 @@
       const cowl = mkMesh(new THREE.SphereGeometry(0.185, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.66), dark, 0, H * 0.94, 0);
       cowl.scale.set(1.05, 1.35, 1.12);
       cowl.position.z -= 0.015;
+      cowl.material.side = THREE.DoubleSide; // interior depth: the inside of the cowl is visible past the rim
       g.add(cowl);
+      // raised cowl rim around the face opening
+      const rim = mkMesh(new THREE.TorusGeometry(0.15, 0.028, 8, 18), dark, 0, H * 0.945, 0.09);
+      rim.rotation.x = 0.25;
+      g.add(rim);
       // drape of the hood onto the back and shoulders
       const drape = mkMesh(new THREE.ConeGeometry(0.22, 0.34, 14, 1, true, Math.PI * 0.75, Math.PI * 1.5), dark, 0, H * 0.80, -0.05);
       drape.material.side = THREE.DoubleSide;
       g.add(drape);
-      // dark recess of the face inside the hood
-      const shadow = mkMesh(new THREE.SphereGeometry(0.115, 12, 10), new THREE.MeshBasicMaterial({ color: 0x0a0810 }), 0, H * 0.93, 0.055, { cast: false });
-      shadow.scale.set(1, 1.1, 0.7);
+      // dark recess of the face inside the hood, set deeper behind the rim
+      const shadow = mkMesh(new THREE.SphereGeometry(0.125, 12, 10), new THREE.MeshBasicMaterial({ color: 0x0a0810 }), 0, H * 0.935, 0.035, { cast: false });
+      shadow.scale.set(1, 1.15, 0.8);
       g.add(shadow);
+    }
+
+    // ---- belt with hanging trim (robed figures) ----
+    if (!opts.armor) {
+      const belt = mkMesh(new THREE.TorusGeometry(0.275, 0.024, 8, 20), darker, 0, H * 0.50, 0, { rotX: Math.PI / 2 });
+      belt.scale.set(1, 1, 1.4); // thicker vertically once rotated flat
+      g.add(belt);
+      // hanging strap-end at the front
+      g.add(mkMesh(new THREE.BoxGeometry(0.05, H * 0.13, 0.018), darker, 0.05, H * 0.435, 0.265));
     }
 
     // ---- armour plating (Manfred / Frederic / knights) ----
@@ -113,22 +143,33 @@
       g.add(visor);
     }
 
-    // ---- arms hanging along the body (upper arm + forearm, slightly bent) ----
+    // ---- sleeved arms held slightly away from the robe ----
+    // (upper arm + forearm in loose sleeves with visible cuffs, bent at the
+    // elbow; armour keeps fitted steel arms instead of cloth sleeves)
     const armMat = opts.armor ? steelMaterial(opts.armorColor) : dark;
     function buildArm(side) {
       const shoulder = new THREE.Group();
-      shoulder.position.set(side * 0.26, H * 0.72, 0.02);
-      const upper = mkMesh(new THREE.CylinderGeometry(0.065, 0.058, H * 0.24, 9), armMat, 0, -H * 0.12, 0);
+      shoulder.position.set(side * 0.27, H * 0.72, 0.02);
+      const sleeved = !opts.armor;
+      const upper = sleeved
+        ? mkMesh(new THREE.CylinderGeometry(0.085, 0.068, H * 0.24, 10), armMat, 0, -H * 0.12, 0)
+        : mkMesh(new THREE.CylinderGeometry(0.065, 0.058, H * 0.24, 9), armMat, 0, -H * 0.12, 0);
       shoulder.add(upper);
       const fore = new THREE.Group();
       fore.position.set(0, -H * 0.24, 0.01);
-      const forearm = mkMesh(new THREE.CylinderGeometry(0.055, 0.05, H * 0.22, 9), armMat, 0, -H * 0.11, 0);
+      const forearm = sleeved
+        ? mkMesh(new THREE.CylinderGeometry(0.072, 0.058, H * 0.22, 10), armMat, 0, -H * 0.11, 0)
+        : mkMesh(new THREE.CylinderGeometry(0.055, 0.05, H * 0.22, 9), armMat, 0, -H * 0.11, 0);
       fore.add(forearm);
+      if (sleeved) { // cuff flare at the wrist
+        fore.add(mkMesh(new THREE.CylinderGeometry(0.082, 0.06, H * 0.045, 10), darker, 0, -H * 0.21, 0));
+      }
       // hand
       fore.add(mkMesh(new THREE.SphereGeometry(0.052, 10, 8), skinMat, 0, -H * 0.23, 0.01));
       fore.rotation.x = 0.35; // slight forward bend at the elbow
       shoulder.add(fore);
-      shoulder.rotation.z = side * 0.06;
+      // held away from the robe so the arm silhouette separates from the body
+      shoulder.rotation.z = side * (sleeved ? 0.17 : 0.10);
       g.add(shoulder);
       return fore;
     }

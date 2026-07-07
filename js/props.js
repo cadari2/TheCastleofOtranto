@@ -7,6 +7,34 @@
   const lib = () => OTR.materials.lib;
   const P = OTR.props = {};
 
+  // Merge a list of BufferGeometries (position/normal/uv + index) into one.
+  // BufferGeometryUtils lives in three's examples, not the vendored core
+  // build, so this is done by hand. Inputs are consumed (disposed).
+  function mergeGeoms(geoms) {
+    let vTotal = 0, iTotal = 0;
+    for (const g of geoms) { vTotal += g.attributes.position.count; iTotal += g.index ? g.index.count : g.attributes.position.count; }
+    const out = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv']) {
+      const itemSize = geoms[0].attributes[name].itemSize;
+      const arr = new Float32Array(vTotal * itemSize);
+      let off = 0;
+      for (const g of geoms) { arr.set(g.attributes[name].array, off); off += g.attributes[name].array.length; }
+      out.setAttribute(name, new THREE.BufferAttribute(arr, itemSize));
+    }
+    const idx = vTotal > 65535 ? new Uint32Array(iTotal) : new Uint16Array(iTotal);
+    let iOff = 0, vOff = 0;
+    for (const g of geoms) {
+      const gi = g.index ? g.index.array : null;
+      const n = gi ? gi.length : g.attributes.position.count;
+      for (let i = 0; i < n; i++) idx[iOff + i] = (gi ? gi[i] : i) + vOff;
+      iOff += n; vOff += g.attributes.position.count;
+      g.dispose();
+    }
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    return out;
+  }
+  P.mergeGeoms = mergeGeoms;
+
   function mesh(geo, mat, x, y, z, opts) {
     const m = new THREE.Mesh(geo, mat);
     if (x !== undefined) m.position.set(x, y, z);
@@ -57,20 +85,23 @@
     // plinth with chamfered wash at the base and a string course at 2/3
     // height, so tall walls stop reading as extruded rectangles.
     if (opts.detail !== false && height >= 4 && len >= 4) {
+      // mouldings run past the wall ends by the plinth's own overhang so
+      // plinth/wash/course close at wall corners instead of leaving notches
+      const ext = thick * 0.7;
       const plH = Math.min(1.5, height * 0.2);
-      const plinth = mesh(new THREE.BoxGeometry(thick * 1.35, plH, len), material, cx, baseY + plH / 2, cz);
+      const plinth = mesh(new THREE.BoxGeometry(thick * 1.35, plH, len + ext), material, cx, baseY + plH / 2, cz);
       plinth.rotation.y = ang;
       world.add(plinth);
       const ux = Math.cos(ang), uz = -Math.sin(ang); // wall-face normal
       for (const side of [-1, 1]) { // chamfered wash atop the plinth
-        const wash = mesh(new THREE.BoxGeometry(0.26, 0.09, len), material,
+        const wash = mesh(new THREE.BoxGeometry(0.26, 0.09, len + ext), material,
           cx + ux * side * (thick * 0.62), baseY + plH + 0.02, cz + uz * side * (thick * 0.62));
         wash.rotation.y = ang;
         wash.rotation.z = side * 0.9;
         world.add(wash);
       }
       const scH = 0.24;
-      const course = mesh(new THREE.BoxGeometry(thick * 1.2, scH, len), material, cx, baseY + height * 0.66, cz);
+      const course = mesh(new THREE.BoxGeometry(thick * 1.2, scH, len + ext), material, cx, baseY + height * 0.66, cz);
       course.rotation.y = ang;
       world.add(course);
     }
@@ -93,6 +124,8 @@
     }
   }
 
+  // Merlon + seated cap merged into a single BufferGeometry per wall run:
+  // one mesh (and one shadow caster) instead of ~2 meshes per merlon.
   P.crenellations = function (world, x0, z0, x1, z1, topY, thick, material) {
     const dx = x1 - x0, dz = z1 - z0;
     const len = Math.hypot(dx, dz);
@@ -100,19 +133,22 @@
     const ang = Math.atan2(dx, dz);
     const merlonW = 0.7, gap = 0.5, step = merlonW + gap, h = 0.8;
     const n = Math.floor(len / step);
+    if (n <= 0) return null;
     const startOff = (len - n * step) / 2;
+    const parts = [];
     for (let i = 0; i < n; i++) {
       const d = startOff + i * step + merlonW / 2;
       const x = x0 + ux * d, z = z0 + uz * d;
-      const geo = new THREE.BoxGeometry(thick, h, merlonW);
-      const m = mesh(geo, material, x, topY + h / 2, z);
-      m.rotation.y = ang;
-      world.add(m);
-      // slightly proud cap so each merlon catches a highlight edge
-      const cap = mesh(new THREE.BoxGeometry(thick * 1.16, 0.14, merlonW * 1.16), material, x, topY + h + 0.07, z);
-      cap.rotation.y = ang;
-      world.add(cap);
+      const body = new THREE.BoxGeometry(thick, h, merlonW);
+      body.rotateY(ang); body.translate(x, topY + h / 2, z);
+      // cap seated flush on the merlon top (spans exactly [h, h+0.14])
+      const cap = new THREE.BoxGeometry(thick * 1.16, 0.14, merlonW * 1.16);
+      cap.rotateY(ang); cap.translate(x, topY + h + 0.07, z);
+      parts.push(body, cap);
     }
+    const m = mesh(mergeGeoms(parts), material);
+    world.add(m);
+    return m;
   };
 
   // ---------- arched doorway cut look (freestanding arch frame) ----------
@@ -128,21 +164,43 @@
       g.add(mesh(new THREE.BoxGeometry(legW * 1.5, 0.32, depth * 1.15), material, s * (width / 2 + legW / 2), height - 0.16, 0));
       g.add(mesh(new THREE.BoxGeometry(legW * 1.35, 0.35, depth * 1.1), material, s * (width / 2 + legW / 2), 0.18, 0));
     }
-    // semicircular arch made of voussoir boxes. The voussoirs are sized to the
-    // arc spacing (with overlap) and packed densely enough that they read as a
-    // continuous stone arch rather than a ring of floating blocks.
-    const arcR = width / 2 + legW / 2;
-    const segs = Math.max(11, Math.round(arcR * 4));
-    const voussoirW = (Math.PI * arcR / segs) * 1.6; // tangential, overlaps its neighbours
-    for (let i = 0; i <= segs; i++) {
-      const a = Math.PI * (i / segs);
-      const vx = -Math.cos(a) * arcR;
-      const vy = height + Math.sin(a) * arcR;
-      const box = new THREE.BoxGeometry(voussoirW, 0.55, depth);
-      const vm = mesh(box, material, vx, vy, 0);
-      vm.rotation.z = a - Math.PI / 2;
-      g.add(vm);
+    // Semicircular arch as one continuous swept band: an extruded
+    // half-annulus (no more ragged voussoir ring), with carved joint lines
+    // and a keystone reading against the smooth sweep. Fewer meshes than the
+    // old ~26-box crown.
+    const R1 = width / 2, R2 = width / 2 + legW;
+    const shape = new THREE.Shape();
+    shape.moveTo(R2, 0);
+    shape.absarc(0, 0, R2, 0, Math.PI, false);
+    shape.lineTo(-R1, 0);
+    shape.absarc(0, 0, R1, Math.PI, 0, true);
+    shape.closePath();
+    const bandGeo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 36 });
+    bandGeo.translate(0, 0, -depth / 2);
+    // extrude UVs are position-derived (world units); scale to roughly match
+    // the stone repeat on adjacent walls
+    const uv = bandGeo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.35, uv.getY(i) * 0.35);
+    const band = mesh(bandGeo, material, 0, height, 0);
+    g.add(band);
+    // carved joint lines: thin dark strips radiating across the band
+    const jointMat = new THREE.MeshStandardMaterial({ color: 0x241f1a, roughness: 1 });
+    const nJ = Math.max(7, Math.round(R2 * 2.4)) | 1; // odd → keystone at apex
+    const rm = (R1 + R2) / 2;
+    const joints = [];
+    for (let i = 1; i < nJ; i++) {
+      const a = Math.PI * (i / nJ);
+      if (Math.abs(a - Math.PI / 2) < 0.14) continue; // keystone takes the apex
+      const j = new THREE.BoxGeometry(0.035, legW * 1.01, depth * 1.02);
+      j.rotateZ(a - Math.PI / 2);
+      j.translate(Math.cos(a) * rm, Math.sin(a) * rm, 0);
+      joints.push(j);
     }
+    const jm = mesh(mergeGeoms(joints), jointMat, 0, height, 0, { cast: false });
+    g.add(jm);
+    // keystone: slightly proud wedge at the apex
+    const key = mesh(new THREE.BoxGeometry(Math.max(0.42, R2 * 0.22), legW + 0.22, depth * 1.12), material, 0, height + rm, 0);
+    g.add(key);
     world.add(g);
     if (opts.collide !== false) {
       // two door jambs as colliders; opening left clear
@@ -206,16 +264,16 @@
     // that most say "defensive tower" in silhouette
     g.add(mesh(new THREE.CylinderGeometry(radius * 1.09, radius * 1.3, height * 0.16, 24), material, 0, height * 0.08, 0));
     g.add(mesh(new THREE.CylinderGeometry(radius * 1.18, radius * 1.0, 0.6, 24), material, 0, height - 0.3, 0));
-    // crenellation ring
-    const merlons = 16;
+    // crenellation ring, merged to one mesh
+    const merlons = 16, ringParts = [];
     for (let i = 0; i < merlons; i++) {
       const a = (i / merlons) * Math.PI * 2;
-      const mx = Math.cos(a) * radius, mz = Math.sin(a) * radius;
       const box = new THREE.BoxGeometry(0.6, 0.9, 0.5);
-      const m = mesh(box, material, mx, height + 0.45, mz);
-      m.rotation.y = -a;
-      g.add(m);
+      box.rotateY(-a);
+      box.translate(Math.cos(a) * radius, height + 0.45, Math.sin(a) * radius);
+      ringParts.push(box);
     }
+    g.add(mesh(mergeGeoms(ringParts), material));
     if (opts.roof) {
       const roofGeo = new THREE.ConeGeometry(radius * 1.15, radius * 1.5, 24);
       g.add(mesh(roofGeo, lib().roof, 0, height + radius * 0.75, 0));
@@ -244,45 +302,83 @@
     }
     // brim
     g.add(mesh(new THREE.CylinderGeometry(2.3, 2.3, 0.25, 24), steel, 0, -1.0, 0));
-    // black plumes (sable feathers): a crest of curved quills that spring from
-    // the crown, rise, and droop at the tips — a flowing plume, not a spike-ball.
+    // Black plumes (sable feathers): each quill is a tapered blade ribbon
+    // plus a thin spine ribbon crossed through it, so the crest reads as
+    // feathers, not an urchin of bare tubes. Quills are merged into three
+    // cluster meshes (three draw calls, ~few k triangles), and the sway is
+    // a phase-offset nod — not the old perfect-circle precession.
     const plumeMat = new THREE.MeshStandardMaterial({ color: 0x151119, roughness: 0.82, metalness: 0.08, side: THREE.DoubleSide });
-    const N = 46;
+    const N = 46, CLUSTERS = 3;
+    const rndp = OTR.rng(1764);
+    // one quill = blade ribbon + spine ribbon, both strips along the curve
+    function quillGeoms(curve, len, ox, oz, bx, bz) {
+      const segs = 10;
+      const wide = new THREE.Vector3(-oz, 0, ox);           // blade width dir
+      function ribbon(dirFn, widthFn) {
+        const posArr = new Float32Array((segs + 1) * 2 * 3);
+        const uvArr = new Float32Array((segs + 1) * 2 * 2);
+        const idx = new Uint16Array(segs * 6);
+        for (let s = 0; s <= segs; s++) {
+          const t = s / segs;
+          const p = curve.getPoint(t);
+          const w = widthFn(t) / 2;
+          const d = dirFn(t);
+          const o = s * 6;
+          posArr[o] = bx + p.x - d.x * w; posArr[o + 1] = 3.0 + p.y - d.y * w; posArr[o + 2] = bz + p.z - d.z * w;
+          posArr[o + 3] = bx + p.x + d.x * w; posArr[o + 4] = 3.0 + p.y + d.y * w; posArr[o + 5] = bz + p.z + d.z * w;
+          uvArr[s * 4] = 0; uvArr[s * 4 + 1] = t; uvArr[s * 4 + 2] = 1; uvArr[s * 4 + 3] = t;
+          if (s < segs) {
+            const b = s * 2, io = s * 6;
+            idx[io] = b; idx[io + 1] = b + 1; idx[io + 2] = b + 2;
+            idx[io + 3] = b + 1; idx[io + 4] = b + 3; idx[io + 5] = b + 2;
+          }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+        geo.setIndex(new THREE.BufferAttribute(idx, 1));
+        geo.computeVertexNormals();
+        return geo;
+      }
+      // blade: widest mid-length, tapering at root and tip
+      const blade = ribbon(() => wide, (t) => 0.03 + 0.30 * Math.sin(Math.PI * Math.min(1, t * 1.1)));
+      // spine: thin, perpendicular to the blade (crossed strip)
+      const up = new THREE.Vector3();
+      const spine = ribbon((t) => up.copy(curve.getTangent(t)).cross(wide).normalize(), () => 0.05);
+      return [blade, spine];
+    }
+    const clusterGeoms = Array.from({ length: CLUSTERS }, () => []);
     for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
-      const rr = 0.1 + Math.random() * 0.55;           // where it roots on the crown
-      const len = 2.8 + Math.random() * 2.6;
+      const a = (i / N) * Math.PI * 2 + (rndp() - 0.5) * 0.25;
+      const rr = 0.1 + rndp() * 0.55;                  // root radius on the crown
+      const len = 2.8 + rndp() * 2.6;
       const bx = Math.cos(a) * rr, bz = Math.sin(a) * rr;
-      // outward lean grows with root radius so inner feathers stand tall and
-      // outer ones sweep wide; every feather droops back down at the tip.
-      const lean = 0.25 + rr * 1.1 + Math.random() * 0.2;
+      const lean = 0.25 + rr * 1.1 + rndp() * 0.2;
       const ox = Math.cos(a), oz = Math.sin(a);
-      // Curve is built relative to the feather's root so the quill can sway
-      // about where it springs from the crown.
       const p0 = new THREE.Vector3(0, 0, 0);
       const p1 = new THREE.Vector3(ox * len * 0.45 * lean, len * 0.62, oz * len * 0.45 * lean);
       const p2 = new THREE.Vector3(ox * len * (0.7 + lean * 0.5), len * 0.72 - len * 0.28, oz * len * (0.7 + lean * 0.5));
       const curve = new THREE.QuadraticBezierCurve3(p0, p1, p2);
-      const tube = new THREE.TubeGeometry(curve, 12, 0.12, 6, false);
-      const feather = new THREE.Group();
-      feather.position.set(bx, 3.0, bz);
-      const pl = new THREE.Mesh(tube, plumeMat);
-      pl.castShadow = false; // 46 quills in the shadow pass isn't worth it; the dome casts
-      feather.add(pl);
-      g.add(feather);
-      feather.userData.baseRot = { a, phase: Math.random() * Math.PI * 2 };
+      clusterGeoms[i % CLUSTERS].push(...quillGeoms(curve, len, ox, oz, bx, bz));
     }
+    const clusters = clusterGeoms.map((geoms, ci) => {
+      const m = new THREE.Mesh(mergeGeoms(geoms), plumeMat);
+      m.castShadow = false; // the dome casts; the crest isn't worth the shadow pass
+      m.receiveShadow = false;
+      m.userData.baseRot = { phase: ci * 2.1 };
+      g.add(m);
+      return m;
+    });
     g.scale.setScalar(scale);
     world.add(g);
-    // gentle plume sway updater — each feather nods from its root
+    // gentle sway: quills nod (two incommensurate sines, tiny z component)
+    // instead of orbiting — no more "moves around and around"
     world.addUpdater((dt, e) => {
-      g.children.forEach(c => {
-        if (c.userData.baseRot) {
-          const b = c.userData.baseRot;
-          c.rotation.x = Math.sin(e * 1.1 + b.phase) * 0.05;
-          c.rotation.z = Math.cos(e * 0.9 + b.phase) * 0.05;
-        }
-      });
+      for (const c of clusters) {
+        const b = c.userData.baseRot;
+        c.rotation.x = Math.sin(e * 1.1 + b.phase) * 0.04;
+        c.rotation.z = Math.sin(e * 0.7 + b.phase * 1.7) * 0.015;
+      }
     });
     if (world) world.cyl(x, z, 2.2 * scale, y, y + 6 * scale);
     g.userData.plumeGroup = g;
@@ -313,11 +409,27 @@
   P.giantSword = function (world, x, y, z, ang, scale = 1) {
     const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ang || 0;
     const steel = lib().metal;
-    const blade = mesh(new THREE.BoxGeometry(0.6, 0.16, 9), steel, 0, 0, 1.5);
-    // taper the tip
-    const tip = mesh(new THREE.ConeGeometry(0.32, 1.2, 4), steel, 0, 0, 6.6);
-    tip.rotation.x = Math.PI / 2; tip.rotation.y = Math.PI / 4;
-    g.add(blade); g.add(tip);
+    // Blade as one extruded outline with a bevelled cross-section and a true
+    // tapered tip (replaces the old box + rotated cone, whose seam always
+    // showed). Shape is drawn in (width, length) and swung to lie along +Z.
+    const bl = 10.2, hw = 0.3; // blade length (incl. tip), half-width
+    const bshape = new THREE.Shape();
+    bshape.moveTo(-hw, 0);
+    bshape.lineTo(-hw, bl * 0.82);
+    bshape.quadraticCurveTo(-hw * 0.55, bl * 0.93, 0, bl); // tapered tip
+    bshape.quadraticCurveTo(hw * 0.55, bl * 0.93, hw, bl * 0.82);
+    bshape.lineTo(hw, 0);
+    bshape.closePath();
+    const bgeo = new THREE.ExtrudeGeometry(bshape, {
+      depth: 0.08, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.05, bevelSegments: 1
+    });
+    bgeo.translate(0, 0, -0.04); // center the thickness
+    bgeo.rotateX(Math.PI / 2);   // length now along +Z, edge bevels up/down
+    const blade = mesh(bgeo, steel, 0, 0, -3);
+    g.add(blade);
+    // fuller groove down the middle of the blade
+    const fuller = mesh(new THREE.BoxGeometry(0.09, 0.17, bl * 0.62), lib().metalDark, 0, 0, -3 + bl * 0.36);
+    g.add(fuller);
     g.add(mesh(new THREE.BoxGeometry(2.4, 0.3, 0.5), lib().gold, 0, 0, -3.2)); // crossguard
     const grip = mesh(new THREE.CylinderGeometry(0.28, 0.28, 2.2, 12), lib().woodDark, 0, 0, -4.6);
     grip.rotation.x = Math.PI / 2; g.add(grip);
@@ -335,13 +447,33 @@
     // plinth
     g.add(mesh(new THREE.BoxGeometry(3.4, 1.1, 6.4), marb, 0, 0.55, 0));
     g.add(mesh(new THREE.BoxGeometry(3.8, 0.3, 6.8), marb, 0, 1.2, 0));
-    // recumbent effigy (a knight, hands crossed) — stylized blocky forms
-    const eff = new THREE.Group(); eff.position.set(0, 1.5, 0);
-    eff.add(mesh(new THREE.BoxGeometry(1.3, 0.5, 4.4), marb, 0, 0.3, 0)); // body
-    eff.add(mesh(new THREE.SphereGeometry(0.5, 16, 12), marb, 0, 0.5, -2.3)); // head
-    eff.add(mesh(new THREE.BoxGeometry(1.5, 0.25, 1.2), marb, 0, 0.55, 0.2)); // crossed arms
-    // feet
-    eff.add(mesh(new THREE.BoxGeometry(1.1, 0.5, 0.7), marb, 0, 0.35, 2.4));
+    // recumbent effigy (a knight, hands crossed): a lathe-turned body under
+    // a drape instead of the old stacked boxes — the silhouette swells and
+    // narrows like a figure in stone
+    const eff = new THREE.Group(); eff.position.set(0, 1.35, 0);
+    const V2 = (x, y) => new THREE.Vector2(x, y);
+    const bodyProf = [
+      V2(0.02, 0.0),  V2(0.30, 0.12), V2(0.26, 0.55),  // feet, ankles
+      V2(0.36, 1.20), V2(0.46, 1.90),                  // calves, thighs
+      V2(0.54, 2.35), V2(0.47, 2.75),                  // hips, waist
+      V2(0.58, 3.25), V2(0.53, 3.70),                  // chest, shoulders
+      V2(0.20, 3.95), V2(0.02, 4.05)                   // neck, crown-end
+    ];
+    const bodyGeo = new THREE.LatheGeometry(bodyProf, 20);
+    bodyGeo.rotateX(-Math.PI / 2);  // lay the figure along -Z (head at -Z)
+    bodyGeo.scale(1.15, 0.52, 1);   // flatten against the slab
+    const body = mesh(bodyGeo, marb, 0, 0.28, 2.05);
+    eff.add(body);
+    // drape over the legs: an open half-shell falling to the slab
+    const drapeMat = marb.clone(); drapeMat.side = THREE.DoubleSide;
+    const drapeGeo = new THREE.CylinderGeometry(0.68, 0.72, 2.3, 14, 1, true, 0, Math.PI);
+    drapeGeo.rotateZ(Math.PI / 2); drapeGeo.rotateY(Math.PI / 2); // trough → shell over the body
+    drapeGeo.scale(1, 0.55, 1);
+    const drape = mesh(drapeGeo, drapeMat, 0, 0.32, 1.1);
+    eff.add(drape);
+    eff.add(mesh(new THREE.SphereGeometry(0.42, 16, 12), marb, 0, 0.42, -2.3)); // head on a stone pillow
+    eff.add(mesh(new THREE.BoxGeometry(1.0, 0.22, 0.6), marb, 0, 0.18, -2.35)); // pillow
+    eff.add(mesh(new THREE.BoxGeometry(1.15, 0.22, 1.0), marb, 0, 0.62, -0.7)); // crossed arms over the chest
     g.add(eff);
     world.add(g);
     world.box(x, z, 3.8, 6.8, 0, 2);

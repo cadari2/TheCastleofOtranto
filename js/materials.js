@@ -31,9 +31,41 @@
     });
   }
 
+  // ---------------------------------------------------------------------
+  // Texture failure registry. Every image-backed texture slot on a library
+  // material is recorded here; if the image never arrives (file:// blocks,
+  // 404, ...) the slot is stripped from the material so it can never sample
+  // a dead texture as black (roughness 0 → mirror walls, the reported
+  // wandering-glare artifact). Stripping is idempotent.
+  // ---------------------------------------------------------------------
+  const mapRegistry = []; // { tex, mat, slot, rough }
+
+  function registerMap(mat, slot, tex) {
+    mapRegistry.push({ tex, mat, slot, rough: mat.roughness });
+  }
+  function stripRecord(rec) {
+    if (rec.mat[rec.slot] === rec.tex) {
+      rec.mat[rec.slot] = null;
+      if (rec.slot === 'roughnessMap') rec.mat.roughness = rec.rough; // restore authored value
+      rec.mat.needsUpdate = true;
+    }
+  }
+  function stripTexture(tex) {
+    mapRegistry.forEach(rec => { if (rec.tex === tex) stripRecord(rec); });
+  }
+  // Safety net for loaders whose error event never fires: strip any
+  // registered texture that still has no decoded image dimensions.
+  M.stripDeadMaps = function () {
+    mapRegistry.forEach(rec => {
+      const img = rec.tex.image;
+      if (!img || !(img.width > 0)) { M.texturesOk = false; stripRecord(rec); }
+    });
+  };
+
   function loadMap(file, { srgb = true, onfail = null } = {}) {
     const t = loader.load('assets/textures/' + file, undefined, undefined, () => {
       M.texturesOk = false;
+      stripTexture(t); // never leave a dead texture attached anywhere
       if (onfail) onfail(t);
     });
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -56,6 +88,11 @@
     mat.normalMap.repeat.set(repeat, repeat);
     mat.roughnessMap.repeat.set(repeat, repeat);
     mat.normalScale = new THREE.Vector2(normalScale, normalScale);
+    // partial failure (color OK, secondary maps dead) strips only the dead
+    // slots via the registry; total failure additionally swaps in fb above
+    registerMap(mat, 'map', mat.map);
+    registerMap(mat, 'normalMap', mat.normalMap);
+    registerMap(mat, 'roughnessMap', mat.roughnessMap);
     return mat;
   }
 
@@ -114,17 +151,33 @@
     drawBlocks(null); // immediate fallback content
 
     const img = new Image();
-    img.onload = () => drawBlocks(img);
+    // anonymous, like TextureLoader: without it a file:// image can load yet
+    // TAINT the canvas, and a tainted canvas texture can never be uploaded —
+    // the walls silently fall back to whatever was in GPU memory
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // a tainted draw would poison the whole texture; probe before committing
+      try {
+        const probe = document.createElement('canvas'); probe.width = probe.height = 2;
+        const pctx = probe.getContext('2d');
+        pctx.drawImage(img, 0, 0, 2, 2);
+        pctx.getImageData(0, 0, 1, 1); // throws if tainted
+      } catch (e) { return; } // keep drawn fallback
+      drawBlocks(img);
+    };
     img.onerror = () => {}; // keep drawn fallback
     img.src = 'assets/textures/Concrete031_Color.jpg';
 
-    mat.map = tex;
-    // reuse the concrete normal/roughness maps for surface response
+    mat.map = tex; // safe canvas texture — never needs the registry
+    // reuse the concrete normal/roughness maps for surface response; both
+    // registered so a blocked load strips them instead of sampling black
     mat.normalMap = loadMap('Concrete031_Normal.jpg', { srgb: false });
     mat.roughnessMap = loadMap('Concrete031_Roughness.jpg', { srgb: false });
     mat.normalMap.repeat.set(repeat, repeat);
     mat.roughnessMap.repeat.set(repeat, repeat);
     mat.normalScale = new THREE.Vector2(0.8, 0.8);
+    registerMap(mat, 'normalMap', mat.normalMap);
+    registerMap(mat, 'roughnessMap', mat.roughnessMap);
     return mat;
   }
 
@@ -241,6 +294,14 @@
     lib.bone        = new THREE.MeshStandardMaterial({ color: 0xd9cfb4, roughness: 0.7 });
     lib.candle      = new THREE.MeshStandardMaterial({ color: 0xe9dcb8, roughness: 0.6 });
 
+    // Safety net (see registry above): some browsers/loaders swallow the
+    // image error event on file://; 5 s in, strip anything still dead.
+    setTimeout(M.stripDeadMaps, 5000);
+
+    // animated flame spritesheet shared by every torch (see flameSheetTex)
+    lib.flameSheetFrames = 8;
+    lib.flameSheet = M.flameSheetTex(lib.flameSheetFrames);
+
     // flame sprite texture
     lib.flameTex = canvasTex(128, (ctx, s) => {
       const g = ctx.createRadialGradient(s / 2, s * 0.62, 4, s / 2, s * 0.55, s * 0.5);
@@ -301,6 +362,51 @@
       t.colorSpace = THREE.SRGBColorSpace;
       return t;
     })();
+  };
+
+  // ---------------------------------------------------------------------
+  // Procedurally drawn N-frame flame spritesheet. Each frame is a teardrop
+  // flame whose noise lobes wander with the frame phase, so cycling the
+  // frames reads as genuinely burning fire, not a pulsing sprite. One
+  // texture shared by all torches; per-plane clones only offset the UVs
+  // (same GPU image).
+  // ---------------------------------------------------------------------
+  M.flameSheetTex = function (frames = 8, fw = 96, fh = 160) {
+    const c = document.createElement('canvas');
+    c.width = fw * frames; c.height = fh;
+    const ctx = c.getContext('2d');
+    for (let f = 0; f < frames; f++) {
+      const cx = f * fw + fw / 2;
+      const ph = (f / frames) * Math.PI * 2; // cyclic phase → seamless loop
+      // three nested tongues: outer orange, mid amber, hot core
+      const layers = [
+        { col: '235,96,12',   a: 0.34, r: fw * 0.34, h: 0.58 },
+        { col: '255,178,54',  a: 0.55, r: fw * 0.24, h: 0.74 },
+        { col: '255,244,198', a: 0.85, r: fw * 0.13, h: 0.88 },
+      ];
+      for (const L of layers) {
+        const steps = 15;
+        for (let i = 0; i < steps; i++) {
+          const t = i / (steps - 1); // 0 base → 1 tip
+          // side-to-side lobes; amplitude grows toward the tip and the two
+          // sine frequencies beat against each other frame to frame
+          const wob = (Math.sin(ph + t * 5.5) * 0.09 + Math.sin(ph * 2 + t * 9.0 + 1.7) * 0.055) * fw * t;
+          const x = cx + wob;
+          const y = fh * 0.94 - t * fh * L.h * (0.95 + 0.08 * Math.sin(ph * 3 + t * 4));
+          const r = Math.max(2, L.r * (1 - t * 0.72) * (0.88 + 0.2 * Math.sin(ph + i * 1.9)));
+          const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, `rgba(${L.col},${(L.a * (1 - t * 0.45)).toFixed(3)})`);
+          g.addColorStop(1, `rgba(${L.col},0)`);
+          ctx.fillStyle = g;
+          ctx.fillRect(x - r, y - r, r * 2, r * 2);
+        }
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.repeat.set(1 / frames, 1);
+    return t;
   };
 
   // Cheap environment map (equirectangular gradient) so metals/roughs have

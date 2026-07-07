@@ -122,7 +122,11 @@
       return sun;
     }
 
-    // A torch/lamp: flame sprite + glow + flickering point light.
+    // A torch/lamp: layered burning fire — crossed animated flame planes
+    // cycling a shared spritesheet, a small rising-ember stream, and a point
+    // light with a two-frequency flicker plus positional jitter. The old
+    // oversized glow sprite is now a faint core halo; the fire itself
+    // carries the light.
     torch(x, y, z, opts = {}) {
       const g = new THREE.Group();
       g.position.set(x, y, z);
@@ -133,37 +137,110 @@
       light.position.set(0, 0, 0);
       g.add(light);
 
-      // Scale flame + glow sprites to the light's reach so a small candle
-      // doesn't wear the same big halo as a wall torch (which bloom then blows
-      // out into a giant orb).
+      // Scale fire to the light's reach so a candle doesn't burn like a brazier.
       const sz = OTR.clamp((opts.distance || 12) / 12, 0.5, 1.25);
-      const flame = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: OTR.materials.lib.flameTex, color: 0xffffff, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, fog: false
-      }));
-      flame.scale.set(0.5 * sz, 0.8 * sz, 1);
-      flame.layers.set(1); // layer 1: skipped by the postfx depth prepass
-      g.add(flame);
+      const lib = OTR.materials.lib;
+      const frames = lib.flameSheetFrames;
+
+      // 2–3 crossed flame planes at offset spritesheet phases. Texture clones
+      // share the GPU image; only the UV offset differs per plane.
+      const planeN = sz < 0.7 ? 2 : 3;
+      const planes = [];
+      for (let i = 0; i < planeN; i++) {
+        const tex = lib.flameSheet.clone();
+        tex.needsUpdate = true;
+        tex.repeat.set(1 / frames, 1);
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex, transparent: true, blending: THREE.AdditiveBlending,
+          depthWrite: false, side: THREE.DoubleSide, fog: false
+        });
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5 * sz, 0.9 * sz), mat);
+        m.position.y = 0.30 * sz;
+        m.rotation.y = (i / planeN) * Math.PI + (i ? 0.2 : 0);
+        m.layers.set(1); // layer 1: skipped by the postfx depth prepass
+        g.add(m);
+        planes.push({ m, tex, mat, phase: Math.random() * frames, speed: 9 + i * 2.3 });
+        this.disposables.push(() => { tex.dispose(); mat.dispose(); });
+      }
+
+      // faint core halo only — small and opacity-clamped so bloom cannot
+      // inflate it into the old wandering orbs
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: OTR.materials.lib.glowTex, color: color, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5, fog: false
+        map: lib.glowTex, color: color, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.22, fog: false
       }));
-      glow.scale.set(3 * sz, 3 * sz, 1);
+      glow.scale.set(1.1 * sz, 1.1 * sz, 1);
+      glow.position.y = 0.22 * sz;
       glow.layers.set(1);
       g.add(glow);
+
+      // rising ember stream: tiny respawning Points pool
+      const EN = 14;
+      const epos = new Float32Array(EN * 3);
+      const elife = new Float32Array(EN);   // 0..1, dies at 1
+      const espd = new Float32Array(EN);
+      const edx = new Float32Array(EN), edz = new Float32Array(EN);
+      const respawn = (i) => {
+        epos[i * 3] = (Math.random() - 0.5) * 0.12 * sz;
+        epos[i * 3 + 1] = 0.15 * sz;
+        epos[i * 3 + 2] = (Math.random() - 0.5) * 0.12 * sz;
+        elife[i] = Math.random(); // stagger
+        espd[i] = (0.5 + Math.random() * 0.6) * sz;
+        edx[i] = (Math.random() - 0.5) * 0.14;
+        edz[i] = (Math.random() - 0.5) * 0.14;
+      };
+      for (let i = 0; i < EN; i++) respawn(i);
+      const egeo = new THREE.BufferGeometry();
+      egeo.setAttribute('position', new THREE.BufferAttribute(epos, 3));
+      const emat = new THREE.PointsMaterial({
+        size: 0.035 * sz, map: lib.moteTex, color: 0xffb46a, transparent: true,
+        opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+      });
+      const embers = new THREE.Points(egeo, emat);
+      embers.layers.set(1);
+      g.add(embers);
+      this.disposables.push(() => { emat.dispose(); });
 
       this.scene.add(g);
       const base = opts.intensity || 2.2;
       const seed = Math.random() * 10;
-      const rec = { group: g, light, flame, glow, base, seed, on: true };
+      const rec = { group: g, light, flame: planes[0].m, planes, glow, embers, base, seed, on: true };
       this.torches.push(rec);
       this.addUpdater((dt, e) => {
-        if (!rec.on) return;
-        const f = 0.78 + 0.22 * (Math.sin(e * 11 + seed) * 0.5 + Math.sin(e * 23 + seed * 2) * 0.5);
+        if (!rec.on) {
+          light.intensity = 0;
+          planes.forEach(p => { p.m.visible = false; });
+          glow.visible = false; embers.visible = false;
+          return;
+        }
+        planes.forEach(p => { p.m.visible = true; });
+        glow.visible = true; embers.visible = true;
+        // two combined sine frequencies + slight positional jitter: shadows
+        // and wall light breathe like firelight instead of pulsing
+        const f = 0.80 + 0.20 * (Math.sin(e * 11 + seed) * 0.55 + Math.sin(e * 23 + seed * 2) * 0.45);
         light.intensity = base * f;
-        flame.scale.set((0.42 + f * 0.16) * sz, (0.7 + f * 0.28) * sz, 1);
-        flame.material.rotation = Math.sin(e * 7 + seed) * 0.14;
-        glow.material.opacity = 0.35 + f * 0.25;
+        light.position.set(
+          Math.sin(e * 17 + seed) * 0.02,
+          0.02 + Math.sin(e * 13 + seed * 3) * 0.015,
+          Math.cos(e * 19 + seed) * 0.02);
+        // spritesheet frame cycling at offset phases + per-plane scale wobble
+        for (let i = 0; i < planes.length; i++) {
+          const p = planes[i];
+          p.tex.offset.x = (Math.floor(e * p.speed + p.phase) % frames) / frames;
+          const w = 0.92 + 0.16 * Math.sin(e * 9 + seed + i * 2.1);
+          p.m.scale.set(w, 0.9 + f * 0.25, 1);
+        }
+        glow.material.opacity = OTR.clamp(0.16 + f * 0.12, 0, 0.3);
+        // embers rise, drift and die
+        for (let i = 0; i < EN; i++) {
+          elife[i] += dt * 0.9;
+          if (elife[i] >= 1) { respawn(i); elife[i] = 0; }
+          epos[i * 3] += edx[i] * dt + Math.sin(e * 3 + i) * 0.02 * dt;
+          epos[i * 3 + 1] += espd[i] * dt;
+          epos[i * 3 + 2] += edz[i] * dt;
+        }
+        egeo.attributes.position.needsUpdate = true;
+        emat.opacity = 0.55 + 0.25 * f;
       });
       return rec;
     }

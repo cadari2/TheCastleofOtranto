@@ -1,5 +1,65 @@
 # Visual Artifacts — Diagnosis & Implementation Plan
 
+## Status
+
+- [x] 1. Texture failure registry (`materials.js`) — registry + partial-failure
+      stripping + 5 s safety sweep. Bonus fix found during verification:
+      `stoneBlockMaterial`'s base `Image` now loads `crossOrigin='anonymous'`
+      with a taint probe, because a `file://` image could otherwise *taint*
+      the block canvas and make the wall texture permanently un-uploadable.
+      Verified headless with `assets/textures/**` aborted: stone walls render,
+      no blue mirrors, no wandering smears, zero page errors.
+- [x] 2. Burning torches — `M.flameSheetTex()` 8-frame procedural spritesheet;
+      `world.torch()` rebuilt with 2–3 crossed flame planes at offset phases,
+      ≤ 14-ember rising stream per torch, two-sine flicker + positional
+      jitter; glow shrunk to a clamped core halo; god-ray strength capped and
+      bloom threshold floored in `postfx.js`. Verified in timed headless
+      captures: flame silhouette changes frame to frame, embers rise, no
+      static orbs.
+- [x] 3. Arch rebuild — `P.archway` now sweeps one extruded half-annulus band
+      (36 curve segments) with carved joint lines (merged to a single mesh)
+      and a proud keystone; same signature, same jamb colliders. Verified at
+      the Ch. I gate: continuous crown, no ragged voussoir ring.
+- [x] 4. Crenellation + junction pass — merlon + seated cap merged into one
+      BufferGeometry per wall run (and the tower ring into one mesh);
+      plinth/wash/string-course extended past wall ends so corners close.
+- [x] 5. Plume rebuild — each quill is a tapered blade ribbon + thin crossed
+      spine, merged into 3 cluster meshes; sway retuned to
+      `rot.x = sin(e·1.1+φ)·0.04, rot.z = sin(e·0.7+φ′)·0.015` (a nod, not an
+      orbit). Deterministic layout (seeded rng).
+- [x] 6. Motif fullness — giant sword blade is one extruded outline with
+      bevelled cross-section, fuller strip and true tapered tip; tomb effigy
+      is a lathe-turned recumbent form under a half-shell drape (head on a
+      stone pillow, arms crossed).
+- [x] 7. Figures with presence — robe lathe gains hem-fading cloth folds;
+      loose sleeves with cuffs held away from the body (fitted steel arms on
+      armoured presets); hood gets a raised cowl rim, double-sided interior
+      and deeper face recess; belt with hanging strap on robed figures.
+      `F.make` signature, presets and `walkTo`/`faceTo` untouched — Ch. I
+      crowd verified rendering and animating.
+- [x] 8. v0.1 version bump — `OTR.VERSION = '0.1'` in `util.js`; rendered in
+      the title-screen corner (`#version`, wired in `main.js boot()`); README
+      first line `v 0.1`; `?v=0.1` cache-busting on every `index.html`
+      script tag. Verified headless: corner shows "v 0.1".
+- [x] 9. Mechanical tail — README notes `file://` is fully supported (HTTP
+      still recommended); per-torch cloned flame textures/materials and
+      ember materials go through `world.disposables` (merged geometries are
+      scene-owned and freed by `world.dispose`'s traverse; the flame
+      spritesheet is a shared library texture, kept). Before/after
+      whole-frame `renderer.info` (headless 1280×720, includes shadow +
+      post passes):
+      | scene | draw calls | triangles | geometries |
+      |---|---|---|---|
+      | Ch. I before | 2543 | 172 162 | 930 |
+      | Ch. I after  | 1287 | 186 224 | 500 |
+      | Ch. III before | 134 | 5 022 | 65 |
+      | Ch. III after  | 132 | 4 998 | 64 |
+      Draw calls halved on Ch. I; the triangle rise is the feather blades,
+      well inside budget.
+
+All nine steps complete — implemented on branch
+`claude/visual-artifacts-plan-impl-05n6nj`.
+
 Approved scope: **A (loader hardening) + B (solid architecture kit) + C (great
 motifs) + D (figures with presence)**, at a **performance-neutral** budget.
 Confirmed launch method: opening `index.html` directly from disk (`file://`).

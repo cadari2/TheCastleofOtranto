@@ -104,3 +104,7 @@ body { font-family: Georgia, 'Times New Roman', serif; color: #d8cfc0; }
 #ending-screen .inner { max-width: 700px; padding: 20px; }
 #ending-screen h2 { font-size: 34px; font-weight: normal; color: #e6dbc2; margin-bottom: 26px; }
 #ending-screen p { font-style: italic; font-size: 18px; line-height: 1.8; color: #b3a788; }
+
+/* version tag, title-screen corner */
+#version { position: absolute; right: 16px; bottom: 12px; color: #6f6650;
+  font-size: 13px; letter-spacing: .12em; font-style: italic; pointer-events: none; }
