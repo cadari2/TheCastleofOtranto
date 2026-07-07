@@ -125,12 +125,14 @@
         blending: THREE.AdditiveBlending, depthWrite: false, fog: false
       }));
       flame.scale.set(0.5 * sz, 0.8 * sz, 1);
+      flame.layers.set(1); // layer 1: skipped by the postfx depth prepass
       g.add(flame);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
         map: OTR.materials.lib.glowTex, color: color, transparent: true,
         blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5, fog: false
       }));
       glow.scale.set(3 * sz, 3 * sz, 1);
+      glow.layers.set(1);
       g.add(glow);
 
       this.scene.add(g);
@@ -165,6 +167,7 @@
         sizeAttenuation: true
       });
       const pts = new THREE.Points(geo, mat);
+      pts.layers.set(1); // skipped by the postfx depth prepass
       this.scene.add(pts);
       const arr = geo.attributes.position.array;
       this.addUpdater((dt, e) => {
@@ -189,6 +192,7 @@
       }));
       flame.scale.set(0.16, 0.26, 1);
       flame.renderOrder = 5;
+      flame.layers.set(1); // skipped by the postfx depth prepass
       this.scene.add(flame);
       const lamp = {
         light, flame, fuel: 1, base: opts.intensity || 2.6, on: true,

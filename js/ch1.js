@@ -34,6 +34,7 @@
       // Exposure pulled well under 1 so the pale courtyard paving keeps its
       // detail instead of clipping to white under the strong sun + IBL.
       OTR.game.renderer.toneMappingExposure = 0.95;
+      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xfff4e4, saturation: 1.05 });
       document.getElementById('vignette').style.opacity = 0.5;
 
       // ---- ground ----
@@ -150,7 +151,10 @@
     ctx.checkpoint('confined');
     // dim the world to a claustrophobic gloom under the great helm
     world.setFog(0x0e0c0a, 3, 32);
-    OTR.materials.interiorEnv(world, { top: 0x2a2c34, mid: 0x1a1a1f, bottom: 0x0c0c10, envIntensity: 0.7 });
+    OTR.materials.interiorEnv(world, {
+      top: 0x2a2c34, mid: 0x1a1a1f, bottom: 0x0c0c10,
+      glows: [{ u: 0.7, v: 0.28, r: 0.156, color: 0xfff6dc, intensity: 0.9 }]
+    });
     if (world.sunLight) world.sunLight.intensity = 0.2;
     if (world.hemi) { world.hemi.intensity = 0.35; world.hemi.color.set(0x50607a); world.hemi.groundColor.set(0x1a1510); }
     OTR.game.renderer.toneMappingExposure = 1.0;

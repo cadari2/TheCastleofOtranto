@@ -23,12 +23,13 @@
         glows: [
           { u: 0.30, v: 0.38, r: 0.07, color: 0xffc878, intensity: 0.45 }, // candles
           { u: 0.55, v: 0.42, r: 0.05, color: 0xffc878, intensity: 0.35 },
-          { u: 0.80, v: 0.30, r: 0.10, color: 0xbfd0f0, intensity: 0.35 }, // moonlit window
+          { u: 0.80, v: 0.30, r: 0.156, color: 0xbfd0f0, intensity: 0.6 }, // moonlit window
         ]
       });
       world.setFog(0x08080f, 6, 60);
       world.sun(0x8090b8, 0.35, new THREE.Vector3(-20, 40, -10), 0x1a2038, 0.22);
       OTR.game.renderer.toneMappingExposure = 1.04;
+      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xeaf0ff, saturation: 0.9 });
       document.getElementById('vignette').style.opacity = 0.82;
       world.hardFloor = true;
       OTR.player.eyeHeight = 1.68;
@@ -274,7 +275,9 @@
 
   function addGlory(world, x, y, z) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0 }));
-    glow.position.set(x, y, z); glow.scale.set(80, 80, 1); world.add(glow);
+    glow.position.set(x, y, z); glow.scale.set(80, 80, 1);
+    glow.layers.set(1); // skipped by the postfx depth prepass
+    world.add(glow);
     const s = performance.now();
     world.addUpdater(() => { glow.material.opacity = Math.min(1, (performance.now() - s) / 3000); });
   }

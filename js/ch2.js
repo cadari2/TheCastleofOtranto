@@ -57,16 +57,20 @@
       const scene = world.scene;
       scene.background = new THREE.Color(0x05060a);
       OTR.materials.interiorEnv(world, {
-        top: 0x1c2230, mid: 0x11131a, bottom: 0x07070a, envIntensity: 0.8,
+        top: 0x1c2230, mid: 0x11131a, bottom: 0x07070a,
         glows: [
           { u: 0.15, v: 0.42, r: 0.06, color: 0xffb04a, intensity: 0.5 },
           { u: 0.62, v: 0.40, r: 0.05, color: 0xffb04a, intensity: 0.4 },
           { u: 0.88, v: 0.35, r: 0.09, color: 0x6f8fd0, intensity: 0.3 },
+          // broad soft spot matching the old makeEnv's painted highlight
+          // (same relative size), so ambient stays where darkness was tuned
+          { u: 0.7, v: 0.28, r: 0.156, color: 0xfff6dc, intensity: 0.9 },
         ]
       });
       world.setFog(0x06070b, 2, 22);
       world.hardFloor = true;
       OTR.game.renderer.toneMappingExposure = 1.0;
+      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xe8f0ff, saturation: 0.88 });
       document.getElementById('vignette').style.opacity = 0.9;
       const amb = new THREE.HemisphereLight(0x2a3350, 0x05060a, 0.22); scene.add(amb);
 

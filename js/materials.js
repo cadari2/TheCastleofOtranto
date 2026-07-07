@@ -381,18 +381,18 @@
     return tex;
   };
 
-  // Run an equirect texture through PMREM and install it as the scene's
-  // environment; registers cleanup on the world. envIntensity scales IBL on
-  // every material in the scene after the chapter has built (call last, or
-  // it is applied lazily on next frame via a one-shot updater).
+  // Install an equirect texture as the scene's environment. r160 PMREM-filters
+  // equirect environment maps internally (and noticeably brighter than an
+  // explicit PMREMGenerator pass — the game's interiors were tuned against
+  // that path), so the texture is assigned directly. envIntensity scales IBL
+  // on every material in the scene after the chapter has built (applied
+  // lazily on the next frame via a one-shot updater).
   M.applyEnvironment = function (world, tex, envIntensity) {
-    const pmrem = new THREE.PMREMGenerator(world.renderer);
-    const rt = pmrem.fromEquirectangular(tex);
-    pmrem.dispose();
-    rt.texture.userData.shared = true; // world.dispose: skip; we dispose the RT
-    world.scene.environment = rt.texture;
-    world.disposables.push(() => { rt.dispose(); });
-    if (envIntensity != null) {
+    tex.userData.shared = true; // world.dispose: skip; disposed via disposables
+    world.scene.environment = tex;
+    if (envIntensity == null) envIntensity = 1; // materials are shared across
+    // chapters — always (re)apply, or one chapter's value leaks into the next
+    {
       // apply after build completes (materials are shared across chapters;
       // each chapter sets its own value, so mutation is safe)
       let done = false;
@@ -404,7 +404,7 @@
         });
       });
     }
-    return rt.texture;
+    return tex;
   };
 
   // One call for exterior chapters: build sky, set as visible background,

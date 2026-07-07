@@ -409,6 +409,7 @@
     const clusters = 5 + (Math.random() * 4 | 0);
     for (let i = 0; i < clusters; i++) {
       const s = new THREE.Sprite(foliageMat.clone());
+      s.layers.set(1); // skipped by the postfx depth prepass
       const cs = (2.2 + Math.random() * 1.8) * scale;
       s.scale.set(cs, cs, 1);
       s.position.set((Math.random() - 0.5) * 2 * scale, h * (0.7 + Math.random() * 0.4), (Math.random() - 0.5) * 2 * scale);

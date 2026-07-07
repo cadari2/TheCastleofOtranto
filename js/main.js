@@ -33,6 +33,7 @@
     G.renderer = renderer;
 
     const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 1200);
+    camera.layers.enable(1); // layer 1 = sprites/particles excluded from the depth prepass
     G.camera = camera;
     OTR.player.camera = camera;
 
@@ -114,6 +115,7 @@
     OTR.ui.letterbox(false);
     document.getElementById('damage').style.opacity = 0;
     OTR.game.renderer.toneMappingExposure = 1.05;
+    if (G.postfx) G.postfx.resetGrade();
 
     await OTR.ui.fadeOut(600);
 
