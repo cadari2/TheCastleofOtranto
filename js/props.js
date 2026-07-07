@@ -448,6 +448,18 @@
     const bracket = mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6), lib().darkIron, x + ux * 0.25, y, z + uz * 0.25);
     bracket.rotation.z = Math.PI / 2 * 0.6; bracket.rotation.y = ang;
     world.add(bracket);
+    // soot stain rising up the wall — years of the same torch burning here
+    const soot = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.1, 1.7),
+      new THREE.MeshBasicMaterial({
+        map: lib().sootTex, transparent: true, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -2, opacity: 0.85
+      })
+    );
+    soot.position.set(x + ux * 0.03, y + 1.15, z + uz * 0.03);
+    soot.rotation.y = ang;
+    soot.renderOrder = 1;
+    world.add(soot);
     return world.torch(x + ux * 0.55, y + 0.35, z + uz * 0.55, Object.assign({ intensity: 2.4, distance: 11 }, opts));
   };
 

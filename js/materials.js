@@ -151,6 +151,60 @@
     return mat;
   }
 
+  // ---------------------------------------------------------------------
+  // Stochastic (hex-blend) texture tiling: makes a repeating color map
+  // aperiodic by blending three randomly-offset lookups on a triangular
+  // grid, plus a low-frequency macro tint so big surfaces stop reading as
+  // wallpaper. Injected into MeshStandardMaterial via onBeforeCompile;
+  // only the diffuse map is de-tiled (normal/roughness repeats are far
+  // less visible, and blending them would soften surface response).
+  // ---------------------------------------------------------------------
+  const STOCHASTIC_HELPERS = `
+    vec2 otrHash2(vec2 p) {
+      return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
+    }
+    float otrVNoise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      float a = otrHash2(i).x, b = otrHash2(i + vec2(1, 0)).x;
+      float c = otrHash2(i + vec2(0, 1)).x, d = otrHash2(i + vec2(1, 1)).x;
+      return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    }
+    vec4 otrStochastic(sampler2D tex, vec2 uv) {
+      vec2 skew = mat2(1.0, 0.0, -0.57735027, 1.15470054) * (uv * 3.4641);
+      vec2 cell = floor(skew);
+      vec3 bc = vec3(fract(skew), 0.0);
+      bc.z = 1.0 - bc.x - bc.y;
+      vec2 v1, v2, v3; vec3 w;
+      if (bc.z > 0.0) { v1 = cell; v2 = cell + vec2(0, 1); v3 = cell + vec2(1, 0); w = vec3(bc.z, bc.y, bc.x); }
+      else { v1 = cell + vec2(1, 1); v2 = cell + vec2(1, 0); v3 = cell + vec2(0, 1); w = vec3(-bc.z, 1.0 - bc.y, 1.0 - bc.x); }
+      w = pow(max(w, 0.0), vec3(4.0)); w /= (w.x + w.y + w.z); // sharpen: less ghosting
+      vec2 dx = dFdx(uv), dy = dFdy(uv);
+      return textureGrad(tex, uv + otrHash2(v1), dx, dy) * w.x
+           + textureGrad(tex, uv + otrHash2(v2), dx, dy) * w.y
+           + textureGrad(tex, uv + otrHash2(v3), dx, dy) * w.z;
+    }
+    void main() {`;
+
+  const STOCHASTIC_MAP_FRAGMENT = `
+    #ifdef USE_MAP
+      vec4 sampledDiffuseColor = otrStochastic(map, vMapUv);
+      // macro variation: broad light/dark patches break up remaining repetition
+      float otrMacro = otrVNoise(vMapUv * 0.13) * 0.6 + otrVNoise(vMapUv * 0.031) * 0.4;
+      sampledDiffuseColor.rgb *= 0.80 + 0.40 * otrMacro;
+      diffuseColor *= sampledDiffuseColor;
+    #endif`;
+
+  M.stochastic = function (mat) {
+    mat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader
+        .replace('void main() {', STOCHASTIC_HELPERS)
+        .replace('#include <map_fragment>', STOCHASTIC_MAP_FRAGMENT);
+    };
+    mat.customProgramCacheKey = () => 'otr-stochastic';
+    return mat;
+  };
+
   M.init = function (renderer) {
     M.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     const lib = M.lib;
@@ -159,15 +213,18 @@
     lib.stoneWallBig= stoneBlockMaterial({ repeat: 6 });
     lib.vaultStone  = stoneBlockMaterial({ repeat: 3, dark: true, blockW: 128, blockH: 64, tint: 0xb8bdd0 });
     lib.plaster     = pbr('Concrete034', { repeat: 3, fallbackColor: '#b3ab9c' });
-    lib.paving      = pbr('PavingStones098', { repeat: 10, fallbackColor: '#6a675f' });
-    lib.pavingCourt = pbr('PavingStones098', { repeat: 22, fallbackColor: '#6a675f' });
-    lib.grass       = pbr('Moss002', { repeat: 24, fallbackColor: '#5d7a3a', fallbackVary: [30, 60, 20] });
-    lib.grassNear   = pbr('Moss002', { repeat: 8, fallbackColor: '#5d7a3a', fallbackVary: [30, 60, 20] });
-    lib.forestFloor = pbr('Ground041', { repeat: 18, fallbackColor: '#4a3a26', fallbackVary: [70, 50, 20] });
-    lib.dirt        = pbr('Ground042', { repeat: 14, fallbackColor: '#5d4d35', fallbackVary: [60, 45, 25] });
-    lib.rock        = pbr('Rock035', { repeat: 5, color: 0x9aa0a8, fallbackColor: '#4d5258' });
-    lib.rockBig     = pbr('Rock035', { repeat: 10, color: 0x8d949e, fallbackColor: '#4d5258' });
-    lib.caveRock    = pbr('Rock035', { repeat: 4, color: 0x777f8c, fallbackColor: '#3c4148' });
+    // Large tiled surfaces get stochastic sampling — the courtyard paving and
+    // grass repeat 10–24 times and read as wallpaper without it. Regular
+    // patterns (block walls, planks, checker) must stay aligned, so not these.
+    lib.paving      = M.stochastic(pbr('PavingStones098', { repeat: 10, fallbackColor: '#6a675f' }));
+    lib.pavingCourt = M.stochastic(pbr('PavingStones098', { repeat: 22, fallbackColor: '#6a675f' }));
+    lib.grass       = M.stochastic(pbr('Moss002', { repeat: 24, fallbackColor: '#5d7a3a', fallbackVary: [30, 60, 20] }));
+    lib.grassNear   = M.stochastic(pbr('Moss002', { repeat: 8, fallbackColor: '#5d7a3a', fallbackVary: [30, 60, 20] }));
+    lib.forestFloor = M.stochastic(pbr('Ground041', { repeat: 18, fallbackColor: '#4a3a26', fallbackVary: [70, 50, 20] }));
+    lib.dirt        = M.stochastic(pbr('Ground042', { repeat: 14, fallbackColor: '#5d4d35', fallbackVary: [60, 45, 25] }));
+    lib.rock        = M.stochastic(pbr('Rock035', { repeat: 5, color: 0x9aa0a8, fallbackColor: '#4d5258' }));
+    lib.rockBig     = M.stochastic(pbr('Rock035', { repeat: 10, color: 0x8d949e, fallbackColor: '#4d5258' }));
+    lib.caveRock    = M.stochastic(pbr('Rock035', { repeat: 4, color: 0x777f8c, fallbackColor: '#3c4148' }));
     lib.marbleBlack = pbr('Marble006', { repeat: 2, rough: 0.35, fallbackColor: '#1c1c22' });
     lib.marbleTomb  = pbr('Marble006', { repeat: 1, rough: 0.3, fallbackColor: '#1c1c22' });
     lib.checker     = pbr('Tiles074', { repeat: 8, rough: 0.5, fallbackColor: '#888' });
@@ -207,6 +264,27 @@
       g.addColorStop(1, 'rgba(255,250,235,0)');
       ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
     });
+    // soot smudge: rising smoke stain for the wall above a torch
+    lib.sootTex = (function () {
+      const c = document.createElement('canvas'); c.width = 128; c.height = 192;
+      const ctx = c.getContext('2d');
+      const rnd = OTR.rng(41);
+      for (let i = 0; i < 70; i++) {
+        const t = rnd();                       // 0 bottom (dense) → 1 top (wispy)
+        const y = 176 - t * 168;
+        const x = 64 + (rnd() - 0.5) * (18 + t * 64);
+        const r = 10 + rnd() * 16 + t * 10;
+        const g = ctx.createRadialGradient(x, y, 1, x, y, r);
+        const a = (0.10 + rnd() * 0.10) * (1 - t * 0.7);
+        g.addColorStop(0, `rgba(12,10,8,${a})`);
+        g.addColorStop(1, 'rgba(12,10,8,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })();
     // foliage billboard: painterly leaf cluster with alpha
     lib.leafTex = (function () {
       const c = document.createElement('canvas'); c.width = c.height = 256;
