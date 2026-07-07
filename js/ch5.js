@@ -36,6 +36,9 @@
 
       buildChurch(world);
 
+      // sepulchral mist along the nave floor
+      OTR.props.mist(world, { x0: -8, x1: 8, z0: -20, z1: 16 }, 0.14, { color: 0x8f9cc0, opacity: 0.06, gap: 0.1, layers: 2 });
+
       if (ctx.startBeat === 'finale') { OTR.player.reset(0, 6, Math.PI); ctx.freeze(false); runFinale(world, ctx); return; }
 
       OTR.player.reset(0, -18, 0); // enter at the west door, facing the altar (+Z)

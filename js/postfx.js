@@ -106,10 +106,31 @@
       outColor = vec4(vec3(ao), 1.0);
     }`;
 
+  // radial blur of the bright pass toward the light's screen position —
+  // cheap screen-space god rays for the sun/moon
+  const GODRAY = `
+    precision highp float;
+    in vec2 vUv; out vec4 outColor;
+    uniform sampler2D tSrc; uniform vec2 lightPos; uniform float density;
+    void main() {
+      vec2 delta = (lightPos - vUv) * (1.0 / 26.0) * density;
+      vec2 uv = vUv;
+      vec3 acc = vec3(0.0);
+      float decay = 1.0, w = 0.0;
+      for (int i = 0; i < 26; i++) {
+        uv += delta;
+        acc += texture(tSrc, uv).rgb * decay;
+        w += decay;
+        decay *= 0.94;
+      }
+      outColor = vec4(acc / w, 1.0);
+    }`;
+
   const COMPOSITE = `
     precision highp float;
     in vec2 vUv; out vec4 outColor;
     uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tAO;
+    uniform sampler2D tGod; uniform vec3 godColor; uniform float godStrength;
     uniform float strength; uniform float exposure;
     uniform float aoStrength; uniform float aoPower;
     uniform vec3 gTint; uniform float gSat; uniform float gLift;
@@ -146,6 +167,7 @@
       // screen-blend the bloom so highlights glow without washing mid-tones
       vec3 b = bloom * strength;
       vec3 c = 1.0 - (1.0 - base) * (1.0 - b);
+      c += texture(tGod, vUv).rgb * godColor * godStrength; // light shafts
       // grade: saturation, tint, black lift — cheap per-chapter look control
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(lum), c, gSat) * gTint;
@@ -168,6 +190,9 @@
         strength: 0.85, power: 1.1
       };
       this.grade = { tint: new THREE.Color(1, 1, 1), saturation: 1, lift: 0 };
+      // chapters aim this at their sun/moon (world-space position far away);
+      // strength fades automatically as the light leaves the view
+      this.godrays = { enabled: false, worldPos: new THREE.Vector3(), strength: 0.35, color: new THREE.Color(1, 1, 1) };
 
       const linear = THREE.LinearSRGBColorSpace;
       const size = renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -189,6 +214,7 @@
       });
       this.rtAOa = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       this.rtAOb = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
+      this.rtGod = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       this._half = new THREE.Vector2(hw, hh);
 
       this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
@@ -208,8 +234,12 @@
         near: { value: 0.05 }, far: { value: 1200 },
         radius: { value: this.ao.radius }, intensity: { value: this.ao.intensity }, aoBias: { value: this.ao.bias }
       });
+      this.mGodray = mk(GODRAY, { tSrc: { value: null }, lightPos: { value: new THREE.Vector2(0.5, 0.5) }, density: { value: 1 } });
+      this.blackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+      this.blackTex.needsUpdate = true;
       this.mComposite = mk(COMPOSITE, {
         tScene: { value: null }, tBloom: { value: null }, tAO: { value: this.whiteTex },
+        tGod: { value: this.blackTex }, godColor: { value: new THREE.Color(1, 1, 1) }, godStrength: { value: 0 },
         strength: { value: this.strength }, exposure: { value: 1 },
         aoStrength: { value: this.ao.strength }, aoPower: { value: this.ao.power },
         gTint: { value: new THREE.Color(1, 1, 1) }, gSat: { value: 1 }, gLift: { value: 0 }
@@ -228,7 +258,17 @@
       if (o.saturation != null) this.grade.saturation = o.saturation;
       if (o.lift != null) this.grade.lift = o.lift;
     }
-    resetGrade() { this.grade.tint.set(0xffffff); this.grade.saturation = 1; this.grade.lift = 0; }
+    resetGrade() {
+      this.grade.tint.set(0xffffff); this.grade.saturation = 1; this.grade.lift = 0;
+      this.godrays.enabled = false;
+    }
+    // aim the god rays: dir is the (normalized-ish) direction TO the light
+    setGodrays(dir, opts = {}) {
+      this.godrays.enabled = true;
+      this.godrays.worldPos.copy(dir).multiplyScalar(800);
+      if (opts.strength != null) this.godrays.strength = opts.strength;
+      if (opts.color != null) this.godrays.color.set(opts.color);
+    }
 
     setSize(w, h) {
       w = Math.max(2, w | 0); h = Math.max(2, h | 0);
@@ -239,6 +279,7 @@
       this.rtDepth.setSize(hw, hh);
       this.rtAOa.setSize(hw, hh);
       this.rtAOb.setSize(hw, hh);
+      this.rtGod.setSize(hw, hh);
       this._half.set(hw, hh);
     }
 
@@ -305,6 +346,24 @@
       this.mBright.uniforms.knee.value = this.knee;
       this._blit(this.mBright, this.rtA);
 
+      // 3b) god rays: radial blur of the bright pass toward the light,
+      // faded out as the light leaves the frame or goes behind the camera
+      let godAmount = 0;
+      if (this.godrays.enabled) {
+        const p = this._v3 || (this._v3 = new THREE.Vector3());
+        p.copy(this.godrays.worldPos).add(camera.position).project(camera);
+        if (p.z < 1) {
+          const lx = p.x * 0.5 + 0.5, ly = p.y * 0.5 + 0.5;
+          const edge = Math.max(Math.abs(p.x), Math.abs(p.y));
+          godAmount = OTR.clamp(1.6 - edge, 0, 1) * this.godrays.strength;
+          if (godAmount > 0.003) {
+            this.mGodray.uniforms.tSrc.value = this.rtA.texture;
+            this.mGodray.uniforms.lightPos.value.set(lx, ly);
+            this._blit(this.mGodray, this.rtGod);
+          }
+        }
+      }
+
       // 4) separable gaussian blur, two iterations
       const dx = 1 / this._half.x, dy = 1 / this._half.y;
       for (let i = 0; i < 2; i++) {
@@ -321,6 +380,9 @@
       cu.tScene.value = this.rtScene.texture;
       cu.tBloom.value = this.rtA.texture;
       cu.tAO.value = this.ao.enabled ? this.rtAOa.texture : this.whiteTex;
+      cu.tGod.value = godAmount > 0.003 ? this.rtGod.texture : this.blackTex;
+      cu.godStrength.value = godAmount;
+      cu.godColor.value.copy(this.godrays.color);
       cu.strength.value = this.strength;
       cu.exposure.value = r.toneMappingExposure; // chapters retune this
       cu.aoStrength.value = this.ao.enabled ? this.ao.strength : 0;

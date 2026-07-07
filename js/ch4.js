@@ -28,7 +28,10 @@
       world.setFog(0x0b1220, 14, 120);
       const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34, { area: 45, follow: true });
       OTR.game.renderer.toneMappingExposure = 1.05;
-      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
+      if (OTR.game.postfx) {
+        OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
+        OTR.game.postfx.setGodrays(moonDir, { strength: 0.24, color: 0xb9c9ec });
+      }
       document.getElementById('vignette').style.opacity = 0.8;
 
       // ---- terrain: forest floor sloping down to a beach (+Z = seaward) ----
@@ -83,6 +86,9 @@
 
       // ---- the sea caves: a rocky headland with cave mouths near the shore ----
       buildCaves(world, 0, shoreZ - 6);
+
+      // moon mist hanging between the trees
+      P().mist(world, { x0: -55, x1: 55, z0: -18, z1: 48 }, 0.7, { color: 0x9fb2d8, opacity: 0.10, gap: 0.5 });
 
       // fireflies / drifting spores in the wood
       world.particles(70, { x0: -60, x1: 60, y0: 0.5, y1: 6, z0: -10, z1: 70 }, 0x8fb0d0, 0.05, 0.1);

@@ -34,7 +34,10 @@
       // Exposure pulled well under 1 so the pale courtyard paving keeps its
       // detail instead of clipping to white under the strong sun + IBL.
       OTR.game.renderer.toneMappingExposure = 0.95;
-      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xfff4e4, saturation: 1.05 });
+      if (OTR.game.postfx) {
+        OTR.game.postfx.setGrade({ tint: 0xfff4e4, saturation: 1.05 });
+        OTR.game.postfx.setGodrays(sunDir, { strength: 0.26, color: 0xffe2b0 });
+      }
       document.getElementById('vignette').style.opacity = 0.5;
 
       // ---- ground ----

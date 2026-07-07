@@ -74,6 +74,9 @@
       document.getElementById('vignette').style.opacity = 0.9;
       const amb = new THREE.HemisphereLight(0x2a3350, 0x05060a, 0.22); scene.add(amb);
 
+      // cold mist crawling over the vault floors
+      OTR.props.mist(world, { x0: -6, x1: 26, z0: -9, z1: 24 }, 0.14, { color: 0x8fa0c0, opacity: 0.06, gap: 0.1, layers: 2 });
+
       // ---- layout ----
       // Interior spans (x0..x1 / z0..z1):
       //   S start hall      -4.5..4.5   /  -8..2

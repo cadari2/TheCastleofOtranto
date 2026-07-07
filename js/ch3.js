@@ -35,7 +35,10 @@
       const moon = world.sun(0x9fb0d8, 0.9, new THREE.Vector3(-40, 46, -30), 0x2a3860, 0.32);
       moon.shadow.camera.far = 260;
       OTR.game.renderer.toneMappingExposure = 1.06;
-      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xecf1ff, saturation: 0.92 });
+      if (OTR.game.postfx) {
+        OTR.game.postfx.setGrade({ tint: 0xecf1ff, saturation: 0.92 });
+        OTR.game.postfx.setGodrays(moonDir, { strength: 0.2, color: 0xbdcdf5 });
+      }
       document.getElementById('vignette').style.opacity = 0.78;
 
       world.hardFloor = true;

@@ -583,6 +583,57 @@
     return m;
   };
 
+  // ---------- ground mist ----------
+  // Layered translucent noise planes that drift slowly — reads as low fog
+  // crawling over vault floors / the forest floor. Visual only; on layer 1
+  // so the SSAO depth prepass ignores it.
+  P.mist = function (world, area, y = 0.4, opts = {}) {
+    const lib_ = lib();
+    if (!lib_.mistTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const ctx = c.getContext('2d');
+      const rnd = OTR.rng(23);
+      for (let i = 0; i < 120; i++) {
+        const x = rnd() * 256, yy = rnd() * 256, r = 18 + rnd() * 46;
+        const g = ctx.createRadialGradient(x, yy, 1, x, yy, r);
+        const a = 0.05 + rnd() * 0.07;
+        g.addColorStop(0, `rgba(255,255,255,${a})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        // draw wrapped so the texture tiles without seams
+        for (const ox of [0, -256, 256]) for (const oy of [0, -256, 256])
+          ctx.fillRect(x - r + ox, yy - r + oy, r * 2, r * 2);
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      lib_.mistTex = t;
+    }
+    const w = area.x1 - area.x0, d = area.z1 - area.z0;
+    const cx = (area.x0 + area.x1) / 2, cz = (area.z0 + area.z1) / 2;
+    const color = opts.color != null ? opts.color : 0xaab4cc;
+    const layers = opts.layers || 3;
+    const mats = [];
+    for (let i = 0; i < layers; i++) {
+      const map = lib_.mistTex.clone();
+      map.needsUpdate = true;
+      map.repeat.set(Math.max(1, w / 30), Math.max(1, d / 30));
+      const mat = new THREE.MeshBasicMaterial({
+        map, color, transparent: true, depthWrite: false,
+        opacity: (opts.opacity != null ? opts.opacity : 0.16) * (1 - i * 0.22)
+      });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(cx, y + i * (opts.gap || 0.35), cz);
+      m.renderOrder = 4;
+      m.layers.set(1);
+      world.add(m);
+      mats.push({ map, sx: 0.006 * (i + 1) * (i % 2 ? 1 : -1), sz: 0.004 * (i + 1) });
+    }
+    world.addUpdater((dt) => {
+      for (const rec of mats) { rec.map.offset.x += rec.sx * dt; rec.map.offset.y += rec.sz * dt; }
+    });
+  };
+
   // ---------- torch bracket (wall-mounted, non-colliding) ----------
   P.wallTorch = function (world, x, y, z, ang, opts = {}) {
     const ux = Math.cos(ang), uz = -Math.sin(ang);
