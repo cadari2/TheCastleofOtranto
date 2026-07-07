@@ -26,7 +26,7 @@
         haze: 0.6, hazeColor: 0x1a2440, envIntensity: 0.7
       });
       world.setFog(0x0b1220, 14, 120);
-      const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34);
+      const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34, { area: 45, follow: true });
       OTR.game.renderer.toneMappingExposure = 1.05;
       if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
       document.getElementById('vignette').style.opacity = 0.8;
