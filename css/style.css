@@ -14,7 +14,7 @@ body { font-family: Georgia, 'Times New Roman', serif; color: #d8cfc0; }
 #vignette { position: absolute; inset: 0; pointer-events: none; z-index: 3;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 52%, rgba(5,3,8,0.55) 100%);
   transition: opacity 2s; }
-#grain { position: absolute; inset: -60px; pointer-events: none; z-index: 3; opacity: 0.05; }
+#grain { position: absolute; inset: -60px; pointer-events: none; z-index: 3; opacity: 0.03; }
 #damage { position: absolute; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
   background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(120,10,5,0.55) 100%); }
 #fade { position: absolute; inset: 0; background: #000; z-index: 40; opacity: 1; pointer-events: none;
