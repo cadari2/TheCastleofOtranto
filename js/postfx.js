@@ -266,7 +266,9 @@
     setGodrays(dir, opts = {}) {
       this.godrays.enabled = true;
       this.godrays.worldPos.copy(dir).multiplyScalar(800);
-      if (opts.strength != null) this.godrays.strength = opts.strength;
+      // capped: stronger rays re-inflate every bright spot (torch fire,
+      // glare) into wandering shafts
+      if (opts.strength != null) this.godrays.strength = Math.min(opts.strength, 0.32);
       if (opts.color != null) this.godrays.color.set(opts.color);
     }
 
@@ -342,7 +344,9 @@
 
       // 3) bloom bright-pass at half res
       this.mBright.uniforms.tScene.value = this.rtScene.texture;
-      this.mBright.uniforms.threshold.value = this.threshold;
+      // floor at 0.5: below that, mirror-glare on failed-texture materials
+      // enters the bloom chain and the post pipeline re-inflates the fire
+      this.mBright.uniforms.threshold.value = Math.max(this.threshold, 0.5);
       this.mBright.uniforms.knee.value = this.knee;
       this._blit(this.mBright, this.rtA);
 

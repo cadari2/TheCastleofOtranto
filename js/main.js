@@ -329,6 +329,8 @@
     animate();
 
     document.getElementById('loading').classList.add('hidden');
+    const vEl = document.getElementById('version');
+    if (vEl) vEl.textContent = 'v ' + OTR.VERSION;
     refreshMenu();
 
     const startBtn = document.getElementById('btn-start');

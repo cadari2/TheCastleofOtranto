@@ -1,5 +1,29 @@
 # Visual Artifacts — Diagnosis & Implementation Plan
 
+## Status
+
+- [x] 1. Texture failure registry (`materials.js`) — registry + partial-failure
+      stripping + 5 s safety sweep. Bonus fix found during verification:
+      `stoneBlockMaterial`'s base `Image` now loads `crossOrigin='anonymous'`
+      with a taint probe, because a `file://` image could otherwise *taint*
+      the block canvas and make the wall texture permanently un-uploadable.
+      Verified headless with `assets/textures/**` aborted: stone walls render,
+      no blue mirrors, no wandering smears, zero page errors.
+- [x] 2. Burning torches — `M.flameSheetTex()` 8-frame procedural spritesheet;
+      `world.torch()` rebuilt with 2–3 crossed flame planes at offset phases,
+      ≤ 14-ember rising stream per torch, two-sine flicker + positional
+      jitter; glow shrunk to a clamped core halo; god-ray strength capped and
+      bloom threshold floored in `postfx.js`. Verified in timed headless
+      captures: flame silhouette changes frame to frame, embers rise, no
+      static orbs.
+- [ ] 3. Arch rebuild
+- [ ] 4. Crenellation + junction pass
+- [ ] 5. Plume rebuild
+- [ ] 6. Motif fullness
+- [ ] 7. Figures with presence
+- [ ] 8. v0.1 version bump
+- [ ] 9. Mechanical tail
+
 Approved scope: **A (loader hardening) + B (solid architecture kit) + C (great
 motifs) + D (figures with presence)**, at a **performance-neutral** budget.
 Confirmed launch method: opening `index.html` directly from disk (`file://`).

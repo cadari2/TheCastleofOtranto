@@ -1,4 +1,4 @@
-v 0.0.5
+v 0.1
 # The Castle of Otranto — a playable 3D Gothic tale
 
 A browser-playable, first-person 3D adaptation of Horace Walpole's *The Castle
@@ -66,11 +66,11 @@ the score) is generated procedurally in the browser; there are no audio files.
 **Easiest:** double-click `index.html` to open it in your browser and press
 **Begin**.
 
-One caveat: for security, some browsers refuse to load local image files
-(the textures) when a page is opened directly with `file://`. If the world
-looks flat or untextured when opened that way, the game still runs — it falls
-back to plain colours — but to see it with full textures locally, serve the
-folder over `http://` with any tiny static server, for example:
+Opening directly from disk (`file://`) is fully supported: if the browser
+blocks the local texture images (some do, for security), every material now
+detects the failure and falls back cleanly to drawn stone and plain colours —
+no glossy blue walls, no wandering glare. To see the full CC0 photo textures
+locally, serving the folder over `http://` is still recommended:
 
 ```bash
 # from inside the project folder, pick whichever you have:
