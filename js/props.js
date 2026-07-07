@@ -294,11 +294,30 @@
     // face / body of helm
     const body = mesh(new THREE.CylinderGeometry(2.1, 1.7, 2.4, 24), steel, 0, 0.2, 0);
     g.add(body);
-    // visor slits
+    // face guard: a plate curving across the front of the helm, proud of the
+    // body so it reads from every angle (the old slits sat buried inside the
+    // body cylinder and never showed)
+    const guardMat = steel.clone(); guardMat.side = THREE.DoubleSide;
+    const guard = mesh(new THREE.CylinderGeometry(2.22, 2.06, 1.9, 24, 1, true, -Math.PI * 0.34, Math.PI * 0.68), guardMat, 0, 0.55, 0);
+    g.add(guard);
+    // rim mouldings top and bottom of the guard
+    for (const [yy, rr] of [[1.5, 2.24], [-0.4, 2.08]]) {
+      const rim = mesh(new THREE.TorusGeometry(rr, 0.06, 8, 24, Math.PI * 0.68), steel, 0, yy, 0);
+      rim.rotation.x = Math.PI / 2; rim.rotation.z = Math.PI * 0.16; // centre the arc on +Z
+      g.add(rim);
+    }
     const slitMat = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 1 });
+    // eye holes, dark and deep-set
+    for (const s of [-1, 1]) {
+      const eye = mesh(new THREE.SphereGeometry(0.3, 14, 10), slitMat, s * 0.66, 1.02, 2.1, { cast: false });
+      eye.scale.set(1, 0.62, 0.3);
+      eye.rotation.y = s * 0.3; // follow the curve of the guard
+      g.add(eye);
+    }
+    // breathing slits below the eyes
     for (let i = 0; i < 2; i++) {
-      const s = mesh(new THREE.BoxGeometry(2.4, 0.14, 0.2), slitMat, 0, 0.9 - i * 0.4, 1.75);
-      g.add(s);
+      const sl = mesh(new THREE.BoxGeometry(1.5, 0.1, 0.12), slitMat, 0, 0.3 - i * 0.32, 2.12, { cast: false });
+      g.add(sl);
     }
     // brim
     g.add(mesh(new THREE.CylinderGeometry(2.3, 2.3, 0.25, 24), steel, 0, -1.0, 0));
@@ -307,7 +326,7 @@
     // feathers, not an urchin of bare tubes. Quills are merged into three
     // cluster meshes (three draw calls, ~few k triangles), and the sway is
     // a phase-offset nod — not the old perfect-circle precession.
-    const plumeMat = new THREE.MeshStandardMaterial({ color: 0x151119, roughness: 0.82, metalness: 0.08, side: THREE.DoubleSide });
+    const plumeMat = new THREE.MeshStandardMaterial({ color: 0x6a1420, roughness: 0.82, metalness: 0.08, side: THREE.DoubleSide });
     const N = 46, CLUSTERS = 3;
     const rndp = OTR.rng(1764);
     // one quill = blade ribbon + spine ribbon, both strips along the curve
@@ -380,7 +399,7 @@
         c.rotation.z = Math.sin(e * 0.7 + b.phase * 1.7) * 0.015;
       }
     });
-    if (world) world.cyl(x, z, 2.2 * scale, y, y + 6 * scale);
+    if (world) g.userData.collider = world.cyl(x, z, 2.2 * scale, y, y + 6 * scale);
     g.userData.plumeGroup = g;
     return g;
   };
@@ -770,7 +789,8 @@
   P.wallTorch = function (world, x, y, z, ang, opts = {}) {
     const ux = Math.cos(ang), uz = -Math.sin(ang);
     const bracket = mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6), lib().darkIron, x + ux * 0.25, y, z + uz * 0.25);
-    bracket.rotation.z = Math.PI / 2 * 0.6; bracket.rotation.y = ang;
+    // negative tilt leans the bracket's tip AWAY from the wall (out along +ux)
+    bracket.rotation.z = -Math.PI / 2 * 0.6; bracket.rotation.y = ang;
     world.add(bracket);
     // soot stain rising up the wall — years of the same torch burning here
     const soot = new THREE.Mesh(
@@ -784,7 +804,9 @@
     soot.rotation.y = ang;
     soot.renderOrder = 1;
     world.add(soot);
-    return world.torch(x + ux * 0.55, y + 0.35, z + uz * 0.55, Object.assign({ intensity: 2.4, distance: 11 }, opts));
+    // seat the fire on the bracket's tip (≈0.53 out, 0.21 up from the mount)
+    // instead of floating half a metre above it
+    return world.torch(x + ux * 0.55, y + 0.05, z + uz * 0.55, Object.assign({ intensity: 2.4, distance: 11 }, opts));
   };
 
   // ---------- simple door (swings open) ----------

@@ -72,8 +72,12 @@
     const el = document.getElementById('grain');
     el.style.backgroundImage = `url(${url})`;
     el.style.backgroundRepeat = 'repeat';
-    let x = 0;
-    setInterval(() => { x = (x + 7) % 128; el.style.backgroundPosition = `${x}px ${(x * 2) % 128}px`; }, 60);
+    // Random re-seat each tick. The old linear crawl (+7px, +14px per 60 ms)
+    // read as a coherent dithering pattern sliding across the screen even
+    // with the camera still, instead of film grain.
+    setInterval(() => {
+      el.style.backgroundPosition = `${(Math.random() * 128) | 0}px ${(Math.random() * 128) | 0}px`;
+    }, 90);
   }
 
   // ---------------- chapter lifecycle ----------------

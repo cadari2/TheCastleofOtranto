@@ -333,13 +333,17 @@
         u.near.value = camera.near; u.far.value = camera.far;
         u.radius.value = this.ao.radius; u.intensity.value = this.ao.intensity; u.aoBias.value = this.ao.bias;
         this._blit(this.mSSAO, this.rtAOa);
+        // two blur iterations: one leaves the IGN sample noise visible as a
+        // faint dither/grid over dark surfaces
         const dx = 1 / this._half.x, dy = 1 / this._half.y;
-        this.mBlur.uniforms.tSrc.value = this.rtAOa.texture;
-        this.mBlur.uniforms.dir.value.set(dx, 0);
-        this._blit(this.mBlur, this.rtAOb);
-        this.mBlur.uniforms.tSrc.value = this.rtAOb.texture;
-        this.mBlur.uniforms.dir.value.set(0, dy);
-        this._blit(this.mBlur, this.rtAOa);
+        for (let i = 0; i < 2; i++) {
+          this.mBlur.uniforms.tSrc.value = this.rtAOa.texture;
+          this.mBlur.uniforms.dir.value.set(dx, 0);
+          this._blit(this.mBlur, this.rtAOb);
+          this.mBlur.uniforms.tSrc.value = this.rtAOb.texture;
+          this.mBlur.uniforms.dir.value.set(0, dy);
+          this._blit(this.mBlur, this.rtAOa);
+        }
       }
 
       // 3) bloom bright-pass at half res

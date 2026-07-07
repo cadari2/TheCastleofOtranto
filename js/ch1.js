@@ -91,6 +91,7 @@
       // a shrouded mound (Conrad) at its base
       const mound = P().mesh(new THREE.SphereGeometry(1.6, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), L().blackCloth, 0.8, 0.1, 4.4);
       mound.scale.set(1, 0.5, 1.6); world.add(mound);
+      world._mound = mound;
 
       // ---- figures: Manfred, mourners, peasants ----
       const manfred = F().manfred(world, -3.5, 2);
@@ -173,6 +174,15 @@
     // hide the crowd/manfred (they have withdrawn, gates locked)
     (world._crowd || []).forEach(c => { c.visible = false; c.removeCollider(); });
     if (world._manfred) { world._manfred.visible = false; world._manfred.removeCollider(); }
+    // The iron shell below is built where the courtyard helmet stands: hide
+    // the exterior helmet prop and retire its collider, or the player spawns
+    // wedged between the helmet body and the shell and cannot move.
+    if (world._helmet) {
+      world._helmet.visible = false;
+      const hc = world._helmet.userData.collider;
+      if (hc) { hc.r = 0.01; hc.x = 9999; hc.z = 9999; }
+    }
+    if (world._mound) world._mound.visible = false;
 
     // Build a dark iron enclosure AROUND the player: the underside of the casque.
     const CX = 0, CZ = 2;

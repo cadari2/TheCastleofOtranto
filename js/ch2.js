@@ -253,12 +253,16 @@
           { name: '', text: '<span class="dim">A ray of moonshine, through a cranny of the ruin above, falls upon the plate of brass.</span>' },
           { name: 'Isabella', text: 'Oh, transport! Here is the trap-door!' },
         ]);
-        const lid = P().mesh(new THREE.BoxGeometry(1.4, 0.12, 1.4), L().planks, tx, 0.1, tz);
-        world.add(lid);
+        // the trap-door lid lies flush over the plate and swings open on a
+        // hinge at its far (north) edge, away from the player — no more box
+        // materialising mid-air and sweeping through the player's space
+        const hinge = new THREE.Group(); hinge.position.set(tx, 0.05, tz + 0.7);
+        const lid = P().mesh(new THREE.BoxGeometry(1.4, 0.1, 1.4), L().planks, 0, 0, -0.7);
+        hinge.add(lid); world.add(hinge);
         const start = performance.now();
         (function anim() {
-          const t = Math.min(1, (performance.now() - start) / 700);
-          lid.rotation.x = -OTR.smoothstep(0, 1, t) * 1.4; lid.position.y = 0.1 + t * 0.6;
+          const t = Math.min(1, (performance.now() - start) / 900);
+          hinge.rotation.x = OTR.smoothstep(0, 1, t) * 1.35;
           if (t < 1) requestAnimationFrame(anim);
         })();
         const stairGlow = new THREE.PointLight(0x6f8fd0, 2, 8, 2); stairGlow.position.set(tx, -1, tz); world.add(stairGlow);

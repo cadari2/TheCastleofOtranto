@@ -137,6 +137,9 @@
     P().ceiling(world, x, z + 10, 9, 41, H, L().plaster);
     P().wall(world, x - 4, z - 10, x - 4, z + 30, H, 0.6, L().plaster);
     P().wall(world, x + 4, z - 10, x + 4, z + 30, H, 0.6, L().plaster);
+    // north end wall closing the gallery — the portrait hangs on it (it used
+    // to hang on open night sky)
+    P().wall(world, x - 4, z + 30, x + 4, z + 30, H, 0.6, L().plaster);
     // columns / arcade rhythm
     for (let i = 0; i < 5; i++) {
       P().column(world, x - 3.2, z - 6 + i * 8, H, 0.4, L().plaster);
@@ -152,7 +155,7 @@
     P().banner(world, x + 3.6, 4.4, z + 14, -Math.PI / 2, 0x1a3a5a);
 
     // Alfonso's portrait, at the far end, softly lit (the resemblance!)
-    world._alfonso = P().portrait(world, x, 2.4, z + 29.6, Math.PI, 'alfonso', 2.4, 3.6);
+    world._alfonso = P().portrait(world, x, 2.4, z + 29.55, Math.PI, 'alfonso', 2.4, 3.6);
     const portraitLight = new THREE.SpotLight(0xffe0b0, 2.2, 14, 0.6, 0.6); portraitLight.position.set(x, 4.6, z + 26); portraitLight.target.position.set(x, 2.4, z + 30); world.scene.add(portraitLight); world.scene.add(portraitLight.target);
     // grandsire portrait on a side wall
     P().portrait(world, x - 3.8, 2.6, z + 6, Math.PI / 2, 'grandsire', 1.8, 2.8);
@@ -170,6 +173,12 @@
     // armoury alcove near the start
     P().floor(world, x, z - 8, 8, 6, 0, L().vaultStone);
     P().wall(world, x - 4, z - 11, x + 4, z - 11, H, 0.6, L().plaster);
+    // close the 1 m side gaps between the gallery walls (end at z-10) and the
+    // armoury's north wall (z-11)
+    P().wall(world, x - 4, z - 11, x - 4, z - 10, H, 0.6, L().plaster);
+    P().wall(world, x + 4, z - 11, x + 4, z - 10, H, 0.6, L().plaster);
+    // light the armoury so "find arms" is findable
+    P().wallTorch(world, x - 3.7, 2.6, z - 9, 0, { intensity: 2.2, distance: 10 });
     // racks of arms
     for (let i = -2; i <= 2; i++) {
       const spear = P().mesh(new THREE.CylinderGeometry(0.03, 0.03, 3, 6), L().wood, x + i * 0.6, 1.5, z - 10.6);
@@ -190,9 +199,11 @@
     ctx.checkpoint('interior');
     const { x, z } = HALL;
     // hide the cell area lights bleed by moving player far away
-    OTR.player.reset(x, z + 26, Math.PI); // start at the far (Alfonso) end, facing back down the gallery
+    // start at the far (Alfonso) end, FACING the portrait — the first prompt
+    // is "Look upon the portrait", so it must not begin behind the player
+    OTR.player.reset(x, z + 26, 0);
     OTR.player.pos.set(x, OTR.player.eyeHeight, z + 26);
-    OTR.player.yaw = Math.PI; // face -Z, toward the postern
+    OTR.player.yaw = 0; // face +Z, toward the portrait; the gallery lies behind
     OTR.audio.setAmbience({ wind: 0.05, drone: { freqs: [44, 66], gain: 0.04 } });
 
     let sawPortrait = false;
@@ -210,14 +221,14 @@
 
     ctx.freeze(false);
     setTimeout(() => {
-      ctx.objective('Descend through the gallery &mdash; find arms, and the postern gate');
+      ctx.objective('Descend through the gallery &mdash; find arms in the armoury by the postern gate');
       OTR.ui.toast('A hollow groan sounds somewhere above&hellip;', 4200);
       OTR.audio.whisper();
     }, resumed ? 200 : 300);
 
     // take the arms
     world.addInteractable({
-      x: HALL.x - 2.5, z: HALL.z - 9.6, r: 2.4, once: true, prompt: 'Take up sword and armour',
+      x: HALL.x - 2.5, z: HALL.z - 9.6, r: 3.2, once: true, prompt: 'Take up sword and armour',
       onUse: async () => {
         world._armour.visible = false;
         await ctx.say([
