@@ -1,8 +1,11 @@
 # Visual Artifacts — Diagnosis & Implementation Plan
 
-Approved scope: **A (loader hardening) + B (solid architecture kit) + C (great motifs)**,
-at a **performance-neutral** budget. Confirmed launch method: opening `index.html`
-directly from disk (`file://`).
+Approved scope: **A (loader hardening) + B (solid architecture kit) + C (great
+motifs) + D (figures with presence)**, at a **performance-neutral** budget.
+Confirmed launch method: opening `index.html` directly from disk (`file://`).
+Additional direction from review: torches should read as genuinely **burning,
+flickering fire** (not merely tamed glow sprites), and on completion the game
+version bumps to **v0.1**, displayed somewhere in the game itself.
 
 ## Overview
 
@@ -36,6 +39,19 @@ and two construction weaknesses:
 - **C — Great motifs.** Feather-blade plume (validated in-engine), plus fullness
   passes on the giant sword, tomb effigy. Sway animation retuned to a nod, not an
   orbit.
+- **D — Figures with presence.** Fuller silhouettes for the cast in `figures.js`:
+  sleeved arms held away from the robe, hood volume, belts and trim, subtle
+  cloth-fold geometry in the lathe profile — still stylized and faceless.
+- **Burning torches.** Replace the single flame sprite + oversized glow sprite
+  with layered fire: stacked animated flame planes driven by a procedurally
+  drawn multi-frame flame spritesheet (offset phases, additive blending), a
+  small rising-ember particle stream, and the existing PointLight with a richer
+  flicker curve (two combined sine frequencies plus slight positional jitter).
+  The big glow sprite shrinks to a faint core halo — the fire itself carries
+  the light.
+- **v0.1 version bump.** README goes from `v 0.0.5` to `v 0.1`, and the version
+  string is rendered inside the game (title screen corner), sourced from a
+  single shared constant.
 
 Prototype screenshots for all of the above are in the session artifact
 ("Otranto — Visual Artifacts: Diagnosis & Options").
@@ -53,6 +69,15 @@ Prototype screenshots for all of the above are in the session artifact
 - **Perf neutrality.** Feather blades ≈ +4k triangles on the casque but merged into
   few draw calls; merlons merge from ~2 meshes each into 1 per wall. Verify with
   `renderer.info` before/after on Ch. I and Ch. III.
+- **Torch count × fire layers.** Chapters place many torches; each rebuilt torch
+  adds 2–3 flame planes plus an ember stream. Ember pools must be tiny (≤ 20
+  points, one Points mesh per torch) and flame planes share one spritesheet
+  texture and material so the draw-call increase stays a handful per chapter.
+- **Figure API stability.** `F.make` presets, `walkTo`/`faceTo`, and chapter
+  scripts (crowd blocking, dialogue marks) must keep working unchanged; the
+  rebuild alters geometry inside the group, not the group's transforms or
+  animation contract. Crowd figures stay cheap (shared geometries, no
+  per-figure canvas work).
 
 ## Step-by-Step Implementation Plan
 
@@ -71,12 +96,21 @@ headless screenshot runs (with and without texture loads blocked).
      dimensions and strip it (covers loaders whose error event never fires).
    - Acceptance: with `assets/textures/**` aborted, Ch. I renders stone walls
      (matches `fixed_gate` prototype), no blue mirrors, no wandering smears.
-2. **Amplifier tuning (`world.js`, `postfx.js`).**
-   - Scale torch glow sprite by light distance *and* clamp opacity so bloom can't
-     inflate it into orbs around figures.
-   - Cap god-ray strength contribution from surfaces with roughness < 0.2 is not
-     feasible cheaply — instead cap `setGodrays` strength and keep the bright-pass
-     threshold above mirror-glare level.
+2. **Burning torches (`world.js torch()`, `materials.js`, `props.js P.wallTorch`).**
+   - New `M.flameSheetTex()`: a procedurally drawn N-frame flame spritesheet
+     (canvas, teardrop flame with animated noise lobes per frame) shared by all
+     torches.
+   - `world.torch()` rebuild: 2–3 crossed flame planes cycling through the
+     spritesheet at offset phases + per-plane scale wobble; a rising ember
+     stream (small Points pool, ≤ 20, respawning with upward drift and fade);
+     PointLight flicker upgraded to two combined sine frequencies plus slight
+     positional jitter so shadows breathe like firelight.
+   - The oversized glow sprite (3× scale, bloom-amplified into wandering orbs)
+     shrinks to a faint core halo with clamped opacity.
+   - `postfx.js`: cap `setGodrays` strength and keep the bright-pass threshold
+     above mirror-glare level so post never re-inflates the fire.
+   - Acceptance: headless timed captures show flame shape changing frame to
+     frame, embers rising, no static orbs; draw calls within budget.
 3. **Arch rebuild (`props.js P.archway`).** Swept extruded half-annulus band,
    carved joint lines, keystone, imposts; same signature, same colliders, fewer
    meshes than the voussoir ring. All five chapters pick it up automatically.
@@ -90,16 +124,25 @@ headless screenshot runs (with and without texture loads blocked).
 6. **Motif fullness (`props.js`).** Giant sword: bevelled blade cross-section with
    fuller groove and true tapered tip (Extrude, replaces box+cone). Tomb effigy:
    lathe-turned recumbent form under a drape instead of stacked boxes.
-7. **Mechanical tail.** README note that `file://` is now supported (HTTP still
-   recommended); dispose-path audit for the new merged geometries; before/after
-   `renderer.info` numbers recorded in the PR description.
+7. **Figures with presence (`figures.js`).** Richer `robeGeometry` lathe profile
+   with subtle cloth-fold undulation; sleeved arms (tapered lathe/tube sleeves
+   with visible cuffs) held slightly away from the robe; hood gains interior
+   depth and a raised cowl rim; belt with hanging trim; preset accents (armor
+   plates, sashes) seated on the new silhouette. `F.make` signature, presets,
+   and `walkTo`/`faceTo` untouched; verify a dialogue scene and the Ch. I crowd
+   render and animate identically apart from the fuller shapes.
+8. **v0.1 version bump, shown in-game.** Single `OTR.VERSION = '0.1'` constant;
+   README first line updated to `v 0.1`; version rendered unobtrusively in the
+   game UI (title-screen corner) and used as the cache-busting query
+   (`?v=0.1`) on `index.html` script tags.
+9. **Mechanical tail.** README note that `file://` is now supported (HTTP still
+   recommended); dispose-path audit for the new merged geometries, flame
+   spritesheet, and ember pools; before/after `renderer.info` numbers recorded
+   in the PR description.
 
 ## Open Questions
 
-- The torch **glow halos**: keep them (dimmer, smaller) or remove entirely and let
-  bloom alone carry the light? Plan assumes keep-but-tame.
-- **Figures (Option D)** were deferred — worth scheduling as a follow-up once A–C
-  land?
-- For hosted deployments, add a cache-busting query (`?v=0.0.6`) to script tags so
-  players never see stale JS after upgrades — cheap, but touches `index.html`;
-  included unless objected to.
+None blocking — the three former open questions were resolved by review:
+torches get a full burning-fire rebuild (step 2), figures (Option D) are in
+scope this round (step 7), and the version becomes v0.1 with in-game display
+and cache-busting (step 8).
