@@ -37,8 +37,28 @@
       and deeper face recess; belt with hanging strap on robed figures.
       `F.make` signature, presets and `walkTo`/`faceTo` untouched — Ch. I
       crowd verified rendering and animating.
-- [ ] 8. v0.1 version bump
-- [ ] 9. Mechanical tail
+- [x] 8. v0.1 version bump — `OTR.VERSION = '0.1'` in `util.js`; rendered in
+      the title-screen corner (`#version`, wired in `main.js boot()`); README
+      first line `v 0.1`; `?v=0.1` cache-busting on every `index.html`
+      script tag. Verified headless: corner shows "v 0.1".
+- [x] 9. Mechanical tail — README notes `file://` is fully supported (HTTP
+      still recommended); per-torch cloned flame textures/materials and
+      ember materials go through `world.disposables` (merged geometries are
+      scene-owned and freed by `world.dispose`'s traverse; the flame
+      spritesheet is a shared library texture, kept). Before/after
+      whole-frame `renderer.info` (headless 1280×720, includes shadow +
+      post passes):
+      | scene | draw calls | triangles | geometries |
+      |---|---|---|---|
+      | Ch. I before | 2543 | 172 162 | 930 |
+      | Ch. I after  | 1287 | 186 224 | 500 |
+      | Ch. III before | 134 | 5 022 | 65 |
+      | Ch. III after  | 132 | 4 998 | 64 |
+      Draw calls halved on Ch. I; the triangle rise is the feather blades,
+      well inside budget.
+
+All nine steps complete — implemented on branch
+`claude/visual-artifacts-plan-impl-05n6nj`.
 
 Approved scope: **A (loader hardening) + B (solid architecture kit) + C (great
 motifs) + D (figures with presence)**, at a **performance-neutral** budget.
