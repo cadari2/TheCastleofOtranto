@@ -53,6 +53,27 @@
     const m = mesh(geo, material, cx, baseY + height / 2, cz);
     m.rotation.y = ang;
     world.add(m);
+    // architectural detail (visual only, colliders unchanged): a battered
+    // plinth with chamfered wash at the base and a string course at 2/3
+    // height, so tall walls stop reading as extruded rectangles.
+    if (opts.detail !== false && height >= 4 && len >= 4) {
+      const plH = Math.min(1.5, height * 0.2);
+      const plinth = mesh(new THREE.BoxGeometry(thick * 1.35, plH, len), material, cx, baseY + plH / 2, cz);
+      plinth.rotation.y = ang;
+      world.add(plinth);
+      const ux = Math.cos(ang), uz = -Math.sin(ang); // wall-face normal
+      for (const side of [-1, 1]) { // chamfered wash atop the plinth
+        const wash = mesh(new THREE.BoxGeometry(0.26, 0.09, len), material,
+          cx + ux * side * (thick * 0.62), baseY + plH + 0.02, cz + uz * side * (thick * 0.62));
+        wash.rotation.y = ang;
+        wash.rotation.z = side * 0.9;
+        world.add(wash);
+      }
+      const scH = 0.24;
+      const course = mesh(new THREE.BoxGeometry(thick * 1.2, scH, len), material, cx, baseY + height * 0.66, cz);
+      course.rotation.y = ang;
+      world.add(course);
+    }
     if (opts.collide !== false) {
       // approximate rotated wall with an AABB per axis-aligned or a thin box.
       addRotatedBoxCollider(world, cx, cz, thick, len, ang, baseY, baseY + height);
@@ -87,6 +108,10 @@
       const m = mesh(geo, material, x, topY + h / 2, z);
       m.rotation.y = ang;
       world.add(m);
+      // slightly proud cap so each merlon catches a highlight edge
+      const cap = mesh(new THREE.BoxGeometry(thick * 1.16, 0.14, merlonW * 1.16), material, x, topY + h + 0.07, z);
+      cap.rotation.y = ang;
+      world.add(cap);
     }
   };
 
@@ -98,6 +123,11 @@
     const legGeo = new THREE.BoxGeometry(legW, height, depth);
     const l = mesh(legGeo, material, -(width / 2 + legW / 2), height / 2, 0); g.add(l);
     const r = mesh(legGeo.clone(), material, (width / 2 + legW / 2), height / 2, 0); g.add(r);
+    // impost blocks where the arch springs from the jambs
+    for (const s of [-1, 1]) {
+      g.add(mesh(new THREE.BoxGeometry(legW * 1.5, 0.32, depth * 1.15), material, s * (width / 2 + legW / 2), height - 0.16, 0));
+      g.add(mesh(new THREE.BoxGeometry(legW * 1.35, 0.35, depth * 1.1), material, s * (width / 2 + legW / 2), 0.18, 0));
+    }
     // semicircular arch made of voussoir boxes. The voussoirs are sized to the
     // arc spacing (with overlap) and packed densely enough that they read as a
     // continuous stone arch rather than a ring of floating blocks.
@@ -172,6 +202,10 @@
     const wall = mesh(new THREE.CylinderGeometry(radius, radius * 1.08, height, 24, 1, true), material, 0, height / 2, 0);
     wall.material = material.clone(); wall.material.side = THREE.DoubleSide;
     g.add(wall);
+    // battered base flare + corbelled ring under the parapet: the two details
+    // that most say "defensive tower" in silhouette
+    g.add(mesh(new THREE.CylinderGeometry(radius * 1.09, radius * 1.3, height * 0.16, 24), material, 0, height * 0.08, 0));
+    g.add(mesh(new THREE.CylinderGeometry(radius * 1.18, radius * 1.0, 0.6, 24), material, 0, height - 0.3, 0));
     // crenellation ring
     const merlons = 16;
     for (let i = 0; i < merlons; i++) {
@@ -398,32 +432,140 @@
 
   // ---------- trees & rocks (forest) ----------
   // bright: foliage lightness (day ~0.34, night ~0.12). hue/sat also tuned.
+  // Foliage is real geometry (noise-displaced icosahedron lobes), not camera
+  // billboards: it takes light, fog, shadows and SSAO like everything else,
+  // and holds its silhouette when the player walks past.
+  function foliageLobe(radius, seed) {
+    const geo = new THREE.IcosahedronGeometry(radius, 2);
+    const pos = geo.attributes.position;
+    // coherent noise displacement (neighbouring vertices move together) so
+    // the lobe goes lumpy like a crown, not crumpled like foil
+    const s = (seed % 100) * 0.37;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const k = 0.88 + 0.28 * OTR.fbm((x + z) * 0.55 / radius + s, (y + z * 0.5) * 0.55 / radius - s, 2);
+      pos.setXYZ(i, x * k, y * 0.78 * k, z * k);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
   P.tree = function (world, x, z, scale = 1, groundY = 0, bright = 0.34) {
     const g = new THREE.Group(); g.position.set(x, groundY, z);
     const h = (5 + Math.random() * 3) * scale;
-    const trunk = mesh(new THREE.CylinderGeometry(0.18 * scale, 0.4 * scale, h, 8), lib().wood, 0, h / 2, 0);
+    const trunk = mesh(new THREE.CylinderGeometry(0.15 * scale, 0.42 * scale, h, 7), lib().wood, 0, h / 2, 0);
     trunk.rotation.z = (Math.random() - 0.5) * 0.15;
     g.add(trunk);
+    // a couple of boughs reaching into the crown
+    const boughs = 2 + (Math.random() * 2 | 0);
+    for (let i = 0; i < boughs; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const b = mesh(new THREE.CylinderGeometry(0.05 * scale, 0.12 * scale, h * 0.5, 5), lib().wood,
+        Math.cos(a) * 0.5 * scale, h * (0.55 + Math.random() * 0.15), Math.sin(a) * 0.5 * scale);
+      b.rotation.z = Math.cos(a) * 0.7; b.rotation.x = -Math.sin(a) * 0.7;
+      g.add(b);
+    }
     const night = bright < 0.2;
-    const foliageMat = new THREE.SpriteMaterial({ map: lib().leafTex, transparent: true, depthWrite: false, opacity: night ? 0.85 : 0.96, fog: true });
-    const clusters = 5 + (Math.random() * 4 | 0);
+    const clusters = 5 + (Math.random() * 3 | 0);
     for (let i = 0; i < clusters; i++) {
-      const s = new THREE.Sprite(foliageMat.clone());
-      const cs = (2.2 + Math.random() * 1.8) * scale;
-      s.scale.set(cs, cs, 1);
-      s.position.set((Math.random() - 0.5) * 2 * scale, h * (0.7 + Math.random() * 0.4), (Math.random() - 0.5) * 2 * scale);
+      // first lobe sits centred and large so the crown has no see-through core
+      const central = i === 0;
+      const cs = (central ? 2.3 : 1.6 + Math.random() * 1.2) * scale;
+      const mat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0 });
       if (night) {
-        // moonlit: cool, dark blue-grey-green so foliage doesn't glow
-        const v = 0.04 + Math.random() * 0.05;
-        s.material.color.setRGB(v * 0.7, v, v * 0.9);
+        const v = 0.05 + Math.random() * 0.05;
+        mat.color.setRGB(v * 0.7, v, v * 0.9);
       } else {
-        s.material.color.setHSL(0.24 + Math.random() * 0.06, 0.4, bright + Math.random() * 0.06);
+        mat.color.setHSL(0.24 + Math.random() * 0.06, 0.42, bright + Math.random() * 0.06);
       }
-      g.add(s);
+      const lobe = mesh(foliageLobe(cs, (x * 13 + z * 7 + i * 31) | 0 || 1), mat,
+        central ? 0 : (Math.random() - 0.5) * 2.0 * scale,
+        h * (central ? 0.86 : 0.72 + Math.random() * 0.35),
+        central ? 0 : (Math.random() - 0.5) * 2.0 * scale);
+      g.add(lobe);
     }
     world.add(g);
     world.cyl(x, z, 0.4 * scale, groundY, groundY + h);
     return g;
+  };
+
+  // ---------- instanced grass ----------
+  // A field of crossed alpha-tested blade cards with a simple wind sway,
+  // one draw call. area: {x0,x1,z0,z1}; skip: optional (x,z)=>bool to keep
+  // paths/buildings clear. Blades follow world.groundHeight.
+  P.grassField = function (world, area, count, opts = {}) {
+    const lib_ = lib();
+    if (!lib_.grassBladeTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const ctx = c.getContext('2d');
+      const rnd = OTR.rng(77);
+      for (let i = 0; i < 13; i++) {
+        const bx = 5 + rnd() * 54, top = 6 + rnd() * 16, w = 3.5 + rnd() * 3;
+        const lean = (rnd() - 0.5) * 12;
+        const g0 = 95 + rnd() * 70;
+        ctx.fillStyle = `rgb(${g0 * 0.55 | 0},${g0 | 0},${g0 * 0.42 | 0})`;
+        ctx.beginPath();
+        ctx.moveTo(bx - w, 64); ctx.quadraticCurveTo(bx - w * 0.4 + lean, 34, bx + lean, top);
+        ctx.quadraticCurveTo(bx + w * 0.4 + lean, 34, bx + w, 64);
+        ctx.closePath(); ctx.fill();
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      lib_.grassBladeTex = t;
+    }
+    const bladeH = opts.height || 0.5, bladeW = opts.width || 0.6;
+    const plane = new THREE.PlaneGeometry(bladeW, bladeH);
+    plane.translate(0, bladeH / 2, 0);
+    // crossed pair merged by hand (BufferGeometryUtils lives in three's
+    // examples, not the vendored core build)
+    const p2 = plane.clone().rotateY(Math.PI / 2);
+    const geo = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal', 'uv']) {
+      const a = plane.attributes[name], b = p2.attributes[name];
+      const arr = new Float32Array(a.array.length + b.array.length);
+      arr.set(a.array, 0); arr.set(b.array, a.array.length);
+      geo.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize));
+    }
+    const ia = plane.index.array, ib = p2.index.array, vtx = plane.attributes.position.count;
+    const idx = new Uint16Array(ia.length + ib.length);
+    idx.set(ia, 0);
+    for (let i = 0; i < ib.length; i++) idx[ia.length + i] = ib[i] + vtx;
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    const mat = new THREE.MeshStandardMaterial({
+      map: lib_.grassBladeTex, alphaTest: 0.22, side: THREE.DoubleSide,
+      roughness: 1, metalness: 0, color: opts.color || 0xffffff
+    });
+    const timeU = { value: 0 };
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = timeU;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          float otrPhase = instanceMatrix[3][0] * 2.7 + instanceMatrix[3][2] * 3.3;
+          transformed.xz += vec2(sin(uTime * 1.7 + otrPhase), cos(uTime * 1.3 + otrPhase))
+                            * (position.y * ${(0.14).toFixed(2)});`);
+    };
+    mat.customProgramCacheKey = () => 'otr-grass';
+    const inst = new THREE.InstancedMesh(geo, mat, count);
+    inst.castShadow = false; inst.receiveShadow = true;
+    const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), E = new THREE.Euler();
+    let placed = 0;
+    for (let tries = 0; tries < count * 4 && placed < count; tries++) {
+      const x = area.x0 + Math.random() * (area.x1 - area.x0);
+      const z = area.z0 + Math.random() * (area.z1 - area.z0);
+      if (opts.skip && opts.skip(x, z)) continue;
+      const y = world.groundHeight(x, z) + (opts.yOffset || 0);
+      E.set(0, Math.random() * Math.PI, 0);
+      Q.setFromEuler(E);
+      const s = 0.6 + Math.random() * 0.8;
+      S.set(s, s * (0.7 + Math.random() * 0.6), s);
+      M4.compose(new THREE.Vector3(x, y, z), Q, S);
+      inst.setMatrixAt(placed++, M4);
+    }
+    inst.count = placed;
+    inst.instanceMatrix.needsUpdate = true;
+    world.add(inst);
+    world.addUpdater((dt, e) => { timeU.value = e; });
+    return inst;
   };
 
   P.rock = function (world, x, z, scale = 1, groundY = 0, material) {
@@ -441,12 +583,75 @@
     return m;
   };
 
+  // ---------- ground mist ----------
+  // Layered translucent noise planes that drift slowly — reads as low fog
+  // crawling over vault floors / the forest floor. Visual only; on layer 1
+  // so the SSAO depth prepass ignores it.
+  P.mist = function (world, area, y = 0.4, opts = {}) {
+    const lib_ = lib();
+    if (!lib_.mistTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const ctx = c.getContext('2d');
+      const rnd = OTR.rng(23);
+      for (let i = 0; i < 120; i++) {
+        const x = rnd() * 256, yy = rnd() * 256, r = 18 + rnd() * 46;
+        const g = ctx.createRadialGradient(x, yy, 1, x, yy, r);
+        const a = 0.05 + rnd() * 0.07;
+        g.addColorStop(0, `rgba(255,255,255,${a})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        // draw wrapped so the texture tiles without seams
+        for (const ox of [0, -256, 256]) for (const oy of [0, -256, 256])
+          ctx.fillRect(x - r + ox, yy - r + oy, r * 2, r * 2);
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      lib_.mistTex = t;
+    }
+    const w = area.x1 - area.x0, d = area.z1 - area.z0;
+    const cx = (area.x0 + area.x1) / 2, cz = (area.z0 + area.z1) / 2;
+    const color = opts.color != null ? opts.color : 0xaab4cc;
+    const layers = opts.layers || 3;
+    const mats = [];
+    for (let i = 0; i < layers; i++) {
+      const map = lib_.mistTex.clone();
+      map.needsUpdate = true;
+      map.repeat.set(Math.max(1, w / 30), Math.max(1, d / 30));
+      const mat = new THREE.MeshBasicMaterial({
+        map, color, transparent: true, depthWrite: false,
+        opacity: (opts.opacity != null ? opts.opacity : 0.16) * (1 - i * 0.22)
+      });
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(cx, y + i * (opts.gap || 0.35), cz);
+      m.renderOrder = 4;
+      m.layers.set(1);
+      world.add(m);
+      mats.push({ map, sx: 0.006 * (i + 1) * (i % 2 ? 1 : -1), sz: 0.004 * (i + 1) });
+    }
+    world.addUpdater((dt) => {
+      for (const rec of mats) { rec.map.offset.x += rec.sx * dt; rec.map.offset.y += rec.sz * dt; }
+    });
+  };
+
   // ---------- torch bracket (wall-mounted, non-colliding) ----------
   P.wallTorch = function (world, x, y, z, ang, opts = {}) {
     const ux = Math.cos(ang), uz = -Math.sin(ang);
     const bracket = mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6), lib().darkIron, x + ux * 0.25, y, z + uz * 0.25);
     bracket.rotation.z = Math.PI / 2 * 0.6; bracket.rotation.y = ang;
     world.add(bracket);
+    // soot stain rising up the wall — years of the same torch burning here
+    const soot = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.1, 1.7),
+      new THREE.MeshBasicMaterial({
+        map: lib().sootTex, transparent: true, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -2, opacity: 0.85
+      })
+    );
+    soot.position.set(x + ux * 0.03, y + 1.15, z + uz * 0.03);
+    soot.rotation.y = ang;
+    soot.renderOrder = 1;
+    world.add(soot);
     return world.torch(x + ux * 0.55, y + 0.35, z + uz * 0.55, Object.assign({ intensity: 2.4, distance: 11 }, opts));
   };
 

@@ -85,12 +85,16 @@
     setFog(color, near, far) { this.scene.fog = new THREE.Fog(color, near, far); }
     setFogExp(color, density) { this.scene.fog = new THREE.FogExp2(color, density); }
 
-    sun(color, intensity, dir, ambientColor, ambientInt) {
+    sun(color, intensity, dir, ambientColor, ambientInt, opts = {}) {
       const sun = new THREE.DirectionalLight(color, intensity);
       sun.position.copy(dir);
       sun.castShadow = true;
-      sun.shadow.mapSize.set(2048, 2048);
-      const s = 60;
+      // 4096 where the GPU comfortably allows it — the texel density is what
+      // keeps crenellation and figure shadows from dissolving into blobs.
+      const maxTex = this.renderer.capabilities.maxTextureSize || 4096;
+      const mapSize = opts.mapSize || (maxTex >= 8192 ? 4096 : 2048);
+      sun.shadow.mapSize.set(mapSize, mapSize);
+      const s = opts.area || 60; // fit the frustum to the playable area
       sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
       sun.shadow.camera.top = s; sun.shadow.camera.bottom = -s;
       sun.shadow.camera.near = 1; sun.shadow.camera.far = 220;
@@ -99,6 +103,19 @@
       sun.shadow.radius = 3.5; // softer PCF penumbra instead of hard edges
       this.scene.add(sun);
       this.scene.add(sun.target);
+      if (opts.follow) {
+        // big roaming chapters: keep the (small, sharp) shadow frustum
+        // centred on the player. Snapped to shadow-texel-sized steps so the
+        // shadow edges don't crawl as the camera moves.
+        const dirOff = dir.clone();
+        const step = (2 * s) / mapSize * 8;
+        this.addUpdater(() => {
+          const px = Math.round(OTR.player.pos.x / step) * step;
+          const pz = Math.round(OTR.player.pos.z / step) * step;
+          sun.target.position.set(px, 0, pz);
+          sun.position.set(px + dirOff.x, dirOff.y, pz + dirOff.z);
+        });
+      }
       const hemi = new THREE.HemisphereLight(ambientColor || 0x9fb8d8, 0x30322c, ambientInt != null ? ambientInt : 0.5);
       this.scene.add(hemi);
       this.sunLight = sun; this.hemi = hemi;
@@ -125,12 +142,14 @@
         blending: THREE.AdditiveBlending, depthWrite: false, fog: false
       }));
       flame.scale.set(0.5 * sz, 0.8 * sz, 1);
+      flame.layers.set(1); // layer 1: skipped by the postfx depth prepass
       g.add(flame);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
         map: OTR.materials.lib.glowTex, color: color, transparent: true,
         blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.5, fog: false
       }));
       glow.scale.set(3 * sz, 3 * sz, 1);
+      glow.layers.set(1);
       g.add(glow);
 
       this.scene.add(g);
@@ -165,6 +184,7 @@
         sizeAttenuation: true
       });
       const pts = new THREE.Points(geo, mat);
+      pts.layers.set(1); // skipped by the postfx depth prepass
       this.scene.add(pts);
       const arr = geo.attributes.position.array;
       this.addUpdater((dt, e) => {
@@ -189,6 +209,7 @@
       }));
       flame.scale.set(0.16, 0.26, 1);
       flame.renderOrder = 5;
+      flame.layers.set(1); // skipped by the postfx depth prepass
       this.scene.add(flame);
       const lamp = {
         light, flame, fuel: 1, base: opts.intensity || 2.6, on: true,

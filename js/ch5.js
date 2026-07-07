@@ -18,15 +18,26 @@
     build(world, ctx) {
       const scene = world.scene;
       scene.background = new THREE.Color(0x05060c);
-      scene.environment = OTR.materials.makeEnv(0x1a2038, 0x10131f, 0x07070c);
+      OTR.materials.interiorEnv(world, {
+        top: 0x1a2038, mid: 0x10131f, bottom: 0x07070c, envIntensity: 0.8,
+        glows: [
+          { u: 0.30, v: 0.38, r: 0.07, color: 0xffc878, intensity: 0.45 }, // candles
+          { u: 0.55, v: 0.42, r: 0.05, color: 0xffc878, intensity: 0.35 },
+          { u: 0.80, v: 0.30, r: 0.156, color: 0xbfd0f0, intensity: 0.6 }, // moonlit window
+        ]
+      });
       world.setFog(0x08080f, 6, 60);
       world.sun(0x8090b8, 0.35, new THREE.Vector3(-20, 40, -10), 0x1a2038, 0.22);
       OTR.game.renderer.toneMappingExposure = 1.04;
+      if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xeaf0ff, saturation: 0.9 });
       document.getElementById('vignette').style.opacity = 0.82;
       world.hardFloor = true;
       OTR.player.eyeHeight = 1.68;
 
       buildChurch(world);
+
+      // sepulchral mist along the nave floor
+      OTR.props.mist(world, { x0: -8, x1: 8, z0: -20, z1: 16 }, 0.14, { color: 0x8f9cc0, opacity: 0.06, gap: 0.1, layers: 2 });
 
       if (ctx.startBeat === 'finale') { OTR.player.reset(0, 6, Math.PI); ctx.freeze(false); runFinale(world, ctx); return; }
 
@@ -267,7 +278,9 @@
 
   function addGlory(world, x, y, z) {
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0 }));
-    glow.position.set(x, y, z); glow.scale.set(80, 80, 1); world.add(glow);
+    glow.position.set(x, y, z); glow.scale.set(80, 80, 1);
+    glow.layers.set(1); // skipped by the postfx depth prepass
+    world.add(glow);
     const s = performance.now();
     world.addUpdater(() => { glow.material.opacity = Math.min(1, (performance.now() - s) / 3000); });
   }

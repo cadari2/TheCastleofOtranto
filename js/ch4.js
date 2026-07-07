@@ -17,13 +17,22 @@
 
     build(world, ctx) {
       const scene = world.scene;
-      scene.add(OTR.materials.makeSky(0x08101f, 0x162238, 0x1c2a44));
-      scene.environment = OTR.materials.makeEnv(0x243252, 0x141c30, 0x090b12);
+      const moonDir = new THREE.Vector3(-30, 40, 20).normalize();
+      OTR.materials.sky(world, {
+        seed: 13,
+        top: 0x050a16, high: 0x101c33, horizon: 0x1f2c48, ground: 0x070a10, groundDeep: 0x04050a,
+        sunDir: moonDir, sunColor: 0xdfe8ff, moon: true, discR: 30, haloR: 300,
+        stars: 0.9, clouds: 0.65, cloudLit: 0x9fb2dc, cloudShade: 0x1e2840, cloudAlpha: 0.9,
+        haze: 0.6, hazeColor: 0x1a2440, envIntensity: 0.7
+      });
       world.setFog(0x0b1220, 14, 120);
-      const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34);
+      const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34, { area: 45, follow: true });
       OTR.game.renderer.toneMappingExposure = 1.05;
+      if (OTR.game.postfx) {
+        OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
+        OTR.game.postfx.setGodrays(moonDir, { strength: 0.24, color: 0xb9c9ec });
+      }
       document.getElementById('vignette').style.opacity = 0.8;
-      addMoon(world, 90, 80, 60);
 
       // ---- terrain: forest floor sloping down to a beach (+Z = seaward) ----
       const shoreZ = 78;
@@ -62,6 +71,12 @@
         if (z > shoreZ - 6) continue;               // no trees on the beach
         P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12);
       }
+      // undergrowth: swaying grass tufts along the wood (thins near the beach)
+      P().grassField(world, { x0: -55, x1: 55, z0: -20, z1: 62 }, 2000, {
+        color: 0xb8c2d4, height: 0.38, width: 0.75, // moonlit tufts, low and soft
+        skip: (x, z) => (Math.abs(x) < 3 && z < 60) || z > shoreZ - 14
+      });
+
       // scattered mossy boulders
       for (let i = 0; i < 24; i++) {
         const x = (rng() - 0.5) * 160, z = -10 + rng() * 80;
@@ -71,6 +86,9 @@
 
       // ---- the sea caves: a rocky headland with cave mouths near the shore ----
       buildCaves(world, 0, shoreZ - 6);
+
+      // moon mist hanging between the trees
+      P().mist(world, { x0: -55, x1: 55, z0: -18, z1: 48 }, 0.7, { color: 0x9fb2d8, opacity: 0.10, gap: 0.5 });
 
       // fireflies / drifting spores in the wood
       world.particles(70, { x0: -60, x1: 60, y0: 0.5, y1: 6, z0: -10, z1: 70 }, 0x8fb0d0, 0.05, 0.1);
@@ -128,13 +146,6 @@
       });
     }
   };
-
-  function addMoon(world, x, y, z) {
-    const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xdfe6ff, transparent: true, fog: false, blending: THREE.AdditiveBlending, depthWrite: false }));
-    moon.position.set(x, y, z); moon.scale.set(46, 46, 1); world.add(moon);
-    const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: OTR.materials.lib.glowTex, color: 0xffffff, fog: false, depthWrite: false }));
-    disc.position.set(x, y, z); disc.scale.set(13, 13, 1); world.add(disc);
-  }
 
   function buildCaves(world, cx, cz) {
     // a headland ridge with cave openings
