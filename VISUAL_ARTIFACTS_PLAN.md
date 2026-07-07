@@ -16,11 +16,27 @@
       bloom threshold floored in `postfx.js`. Verified in timed headless
       captures: flame silhouette changes frame to frame, embers rise, no
       static orbs.
-- [ ] 3. Arch rebuild
-- [ ] 4. Crenellation + junction pass
-- [ ] 5. Plume rebuild
-- [ ] 6. Motif fullness
-- [ ] 7. Figures with presence
+- [x] 3. Arch rebuild — `P.archway` now sweeps one extruded half-annulus band
+      (36 curve segments) with carved joint lines (merged to a single mesh)
+      and a proud keystone; same signature, same jamb colliders. Verified at
+      the Ch. I gate: continuous crown, no ragged voussoir ring.
+- [x] 4. Crenellation + junction pass — merlon + seated cap merged into one
+      BufferGeometry per wall run (and the tower ring into one mesh);
+      plinth/wash/string-course extended past wall ends so corners close.
+- [x] 5. Plume rebuild — each quill is a tapered blade ribbon + thin crossed
+      spine, merged into 3 cluster meshes; sway retuned to
+      `rot.x = sin(e·1.1+φ)·0.04, rot.z = sin(e·0.7+φ′)·0.015` (a nod, not an
+      orbit). Deterministic layout (seeded rng).
+- [x] 6. Motif fullness — giant sword blade is one extruded outline with
+      bevelled cross-section, fuller strip and true tapered tip; tomb effigy
+      is a lathe-turned recumbent form under a half-shell drape (head on a
+      stone pillow, arms crossed).
+- [x] 7. Figures with presence — robe lathe gains hem-fading cloth folds;
+      loose sleeves with cuffs held away from the body (fitted steel arms on
+      armoured presets); hood gets a raised cowl rim, double-sided interior
+      and deeper face recess; belt with hanging strap on robed figures.
+      `F.make` signature, presets and `walkTo`/`faceTo` untouched — Ch. I
+      crowd verified rendering and animating.
 - [ ] 8. v0.1 version bump
 - [ ] 9. Mechanical tail
 
