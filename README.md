@@ -1,4 +1,4 @@
-v 0.1.1
+v 0.2
 # The Castle of Otranto — a playable 3D Gothic tale
 
 A browser-playable, first-person 3D adaptation of Horace Walpole's *The Castle
@@ -120,6 +120,10 @@ That's it. There is nothing to install on the server and no server-side code.
 - **[Three.js](https://threejs.org/)** (r160, MIT-licensed) is vendored as a
   plain file at `js/vendor/three.min.js` and loaded with a `<script>` tag — no
   bundler, no CDN dependency, works offline.
+- The sky is a GPU-shaded dome (`js/sky.js`): fBm cumulus that drift and
+  slowly boil, a sun or moon with a scattering halo, twinkling stars, horizon
+  haze. The same shader is baked once per chapter into an equirectangular
+  environment map so the lighting on stone and steel matches the sky overhead.
 - Architecture (arches, vaults, towers, crenellations, the giant helmet, sword,
   tomb, and the apparition) is built procedurally in code — no external 3D model
   files — and lit with physically-based materials, real-time shadows, fog, and a
