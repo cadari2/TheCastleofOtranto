@@ -34,12 +34,14 @@
           P().column(world, cx + ix * w * 0.28, cz + iz * d * 0.28, h, 0.5, L().vaultStone);
     }
   }
-  function moonShaft(world, x, z, intensity = 2.2) {
+  // ceilY: the room's ceiling height — the beam starts there and the dark
+  // opening sits flush against it (a gap showed as a bright collar)
+  function moonShaft(world, x, z, intensity = 2.2, ceilY = 4.6) {
     const spot = new THREE.SpotLight(0x9fb4e0, intensity, 26, 0.5, 0.7, 1.0);
     spot.position.set(x, 12, z); spot.target.position.set(x, 0, z);
     world.scene.add(spot); world.scene.add(spot.target);
-    P().lightShaft(world, x, 5.5, z, { height: 11, radiusTop: 0.5, radiusBottom: 1.9, color: 0x9fb4e0, opacity: 0.16 });
-    const hole = P().mesh(new THREE.CircleGeometry(1.8, 16), new THREE.MeshBasicMaterial({ color: 0x11151f, fog: false }), x, 4.4, z, { cast: false });
+    P().lightShaft(world, x, ceilY / 2, z, { height: ceilY, radiusTop: 0.7, radiusBottom: 1.9, color: 0x9fb4e0, opacity: 0.16 });
+    const hole = P().mesh(new THREE.CircleGeometry(1.0, 16), new THREE.MeshBasicMaterial({ color: 0x11151f, fog: false }), x, ceilY - 0.03, z, { cast: false });
     hole.rotation.x = Math.PI / 2; world.add(hole);
     world.particles(26, { x0: x - 1.6, x1: x + 1.6, y0: 0.2, y1: 9, z0: z - 1.6, z1: z + 1.6 }, 0xb8c8ec, 0.045, 0.04);
     return spot;
@@ -88,10 +90,10 @@
       corridorZ(world, 0, 2, 17.5, 5, H);         // A north corridor
       corridorX(world, 20, -2.5, 25, 5, H);       // B cross corridor (searcher)
       hall(world, 31, 20, 13, 13, H + 0.6, true); // C cloister hall
-      moonShaft(world, 31, 22, 2.6);
+      moonShaft(world, 31, 22, 2.6, H + 0.6);
       corridorZ(world, 31, 26.5, 43.5, 5, H);     // D north to trap chamber
       hall(world, 31, 49, 11, 11, H, false);      // T trap-door chamber
-      moonShaft(world, 33, 50, 1.8);
+      moonShaft(world, 33, 50, 1.8, H);
 
       // Wall plan [x0, z0, x1, z1, height?, baseY?]. Every junction gets a
       // doorway-width opening; every dead face is sealed so neither the player
