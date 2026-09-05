@@ -89,6 +89,9 @@
       // pollen motes in the sun
       world._pollen = world.particles(90, { x0: -R, x1: R, y0: 0.5, y1: 8, z0: -R, z1: R }, 0xfff0c8, 0.06, 0.15);
 
+      // a fallen feather of the plume, against the west wall
+      OTR.relics.place(world, 'plume', -21.5, -19, 0.3);
+
       // ---- the giant helmet, crushing Conrad ----
       const helmet = P().giantHelmet(world, 0, 0, 2, 1.0);
       world._helmet = helmet;

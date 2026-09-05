@@ -6,6 +6,8 @@
     keys: {}, mouseDX: 0, mouseDY: 0, locked: false,
     sensitivity: 0.0022, invertY: false,
     interactPressed: false, spacePressed: false, escPressed: false,
+    crouchPressed: false, shutterPressed: false,
+    lastKey: null, lastKeyTime: 0, // most recent key edge (for keyed QTEs)
     enabled: false
   };
 
@@ -18,6 +20,9 @@
     if (e.code === 'KeyE' || e.code === 'Enter') I.interactPressed = true;
     if (e.code === 'Space') I.spacePressed = true;
     if (e.code === 'Escape') I.escPressed = true;
+    if (e.code === 'KeyC' || e.code === 'ControlLeft' || e.code === 'ControlRight') I.crouchPressed = true;
+    if (e.code === 'KeyF') I.shutterPressed = true;
+    I.lastKey = e.code; I.lastKeyTime = performance.now();
   });
   window.addEventListener('keyup', (e) => { I.keys[e.code] = false; });
   window.addEventListener('blur', () => { I.keys = {}; });

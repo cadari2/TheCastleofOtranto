@@ -82,6 +82,8 @@
       candle(world, -3.2, -14 + i * 6);
       candle(world, 3.2, -14 + i * 6);
     }
+    // Jerome's breviary, left on a bench in the north aisle
+    OTR.relics.place(world, 'breviary', -5.0, -12, 0.3);
     // altar area with tall candles
     candle(world, -2, 14, 1.4); candle(world, 2, 14, 1.4);
     // the tomb of Alfonso, before the altar

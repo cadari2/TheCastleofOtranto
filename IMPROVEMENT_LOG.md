@@ -170,3 +170,94 @@ triangles. No page errors.
 
 Open: the fringe does not sway with the grass wind; the unfringed far
 trees are still domes when the fog is thin (the beach looking back).
+
+---
+
+## Session 3 — 2026-09-05 — making it a game (v0.3)
+
+The brief: more game, less walk. The constraint from the audience profile
+still holds — tension and dread over mechanical complexity — so the new
+systems are all about *being hunted in the dark*, not inventories or
+combat depth.
+
+### What changed
+
+**Stealth — `js/stealth.js`** (new). A searcher is a torch-bearing figure
+on a waypoint loop with pauses to look about. Each frame: vision cone
+(≈95–100°), range scaled by the player's visibility, and a 2D line-of-sight
+test against the world's colliders *at the player's current eye height*, so
+crouching behind a chest hides you and standing does not. Seen time fills a
+detection meter (faster when close, lit, running); unseen time drains it.
+Above 0.3 the searcher goes suspicious — turns to the last-seen point,
+creeps closer, calls out (a toast in the figure's voice, a stinger). At 1.0
+the chapter's `onCaught` fires (fail to checkpoint). Running within earshot
+is *heard*, cone or no cone. Visibility multipliers: crouched ×0.55, running
+×1.35, lamp lit ×1.5, lamp hooded ×0.5, crouched in a registered hide-spot
+×0.3. HUD: an eye that fills (gold → red past 0.6, gold rim while a
+searcher is suspicious) and a heartbeat that quickens with the meter.
+
+**Player.** Crouch on C/Ctrl (eye height ×0.62, speed ×0.62, no running;
+eased over a few frames). Lamp hood on F in the vaults: light ×0.12,
+near-invisible, near-blind; HUD meter dims.
+
+**Chapter II (vaults)** now has two searchers: the cross-corridor domestic
+and Manfred's captain on the north passage and inside the trap chamber
+itself, so the final search is under pressure. Three pairs of buttresses
+along the cross corridor and two pillars in the north passage give cover;
+each buttress niche is a hide-spot. The old "within 2.6 m = caught" check
+is gone.
+
+**Chapter III (tower)** was a walk; it is now a stealth run. Two domestics
+returned early: one paces the gallery, one keeps the armoury and postern.
+Four chests along the gallery walls are crouch-height cover (block sight
+only when the eye is below 0.95 m). Caught = back to the top of the
+gallery ("thrown back into the tower").
+
+**Chapter IV duel** is directional: the knight telegraphs (arm pose +
+label) and the prompt wants the matching key — W high guard, S low guard,
+A/D sidestep, Space strike/disarm; eight rounds. A wrong key is a miss
+like a late one. Three wounds and you fall (fail to the duel checkpoint,
+with a message). `ui.qte` accepts a key name and treats the other QTE keys
+as misses; `input` records the last key edge.
+
+**Relics — `js/relics.js`** (new). Five gilt reliquaries, one per chapter,
+in places off the objective path (courtyard wall, dead end of the cross
+corridor, chamber of the giant limb, cave floor beyond the cleft, north
+aisle bench). Each opens a short note in the tale's voice (original text,
+GPL, not Walpole). Persisted in localStorage; tally on the title and pause
+screens.
+
+**Bug fixed along the way:** the checkpoint-fail message was never seen —
+`startChapter` wipes the toast while rebuilding. It is now deferred until
+the checkpoint has faded back in.
+
+### Verified
+
+A headless functional test (Playwright; the harness drives the world by
+stepping `player.update`/`world.update` directly because SwiftShader
+frames take 1–2 s): 16 checks pass — line of sight blocked by a buttress
+and open down the corridor; C and F toggle crouch and hood; detection
+rises in a searcher's cone, the searcher turns suspicious and calls out,
+the eye shows and fills, capture fails to checkpoint with the message
+shown after reload; crouched behind a buttress the meter stays at 0; both
+tower guards present and the gallery guard sees the player; the relic
+prompt, note and persistence; the duel won on the right keys advancing to
+Chapter V, and three wrong parries falling with the message. No page
+errors.
+
+### Tried and rejected
+
+- Per-searcher alert propagation (one guard calling the others) — more
+  systems than the audience wants; the two-searcher layouts already
+  create crossing patrols.
+- A health bar for the duel — replaced by the wounds line in prose, which
+  keeps the HUD clean and reads as the book.
+
+### Open for next time
+
+- Searchers do not react to the hooded lamp's *absence* of light (a
+  torch-bearer walking into a dark corridor could pause) — flavour only.
+- Isabella follows during the vault search and is never seen by the
+  searchers; making her hide with you (kneel when you crouch) would sell it.
+- The duel could vary the round order per attempt.
+- Tune on real hardware: detection rates were set against simulated time.

@@ -96,6 +96,8 @@
 
       // ---- the sea caves: a rocky headland with cave mouths near the shore ----
       buildCaves(world, 0, shoreZ - 6);
+      // the hermit's beads, on the cave floor beyond the cleft
+      OTR.relics.place(world, 'beads', -9, shoreZ + 1, 0.3);
 
       // moon mist hanging between the trees: a low crawling bed and a taller,
       // thinner drift at head height
@@ -240,28 +242,41 @@
     knight.facePlayer();
     await ctx.say([{ name: '', text: '<span class="dim">He discharges a blow with his sabre. Your valour, so long smothered, breaks forth at once.</span>' }]);
 
+    // The knight telegraphs each stroke: a high cut wants a high guard (W),
+    // a low sweep a low one (S), a lunge a sidestep (A/D); openings want a
+    // strike (SPACE). The wrong guard is as bad as none. Three wounds and
+    // you fall among the rocks.
     const rounds = [
-      { label: 'PARRY his blow!', ok: 'You turn the stroke on your shield.', ms: 1100 },
-      { label: 'STRIKE!', ok: 'Your blade bites home &mdash; first wound.', ms: 1000 },
-      { label: 'PARRY!', ok: 'Steel rings on steel.', ms: 950 },
-      { label: 'STRIKE!', ok: 'He staggers &mdash; a second wound.', ms: 900 },
-      { label: 'DISARM him!', ok: 'You beat the sabre from his hand. He faints from loss of blood.', ms: 900 },
+      { label: 'He cuts HIGH &mdash; guard high!', key: 'W', ms: 1150 },
+      { label: 'An opening &mdash; STRIKE!', key: 'SPACE', ms: 1000 },
+      { label: 'He sweeps LOW &mdash; guard low!', key: 'S', ms: 1050 },
+      { label: 'He lunges &mdash; step LEFT!', key: 'A', ms: 950 },
+      { label: 'STRIKE!', key: 'SPACE', ms: 900 },
+      { label: 'HIGH again!', key: 'W', ms: 900 },
+      { label: 'He lunges &mdash; step RIGHT!', key: 'D', ms: 850 },
+      { label: 'DISARM him!', key: 'SPACE', ms: 850 },
     ];
-    let i = 0;
+    let i = 0, wounds = 0;
+    const armSwing = (k) => { if (knight.userData.rarm) knight.userData.rarm.rotation.z = k === 'W' ? -1.2 : k === 'S' ? 0.4 : -0.5; };
     while (i < rounds.length) {
       const r = rounds[i];
+      armSwing(r.key);
       OTR.audio.sword();
-      const success = await ctx.qte(r.label, 'SPACE', r.ms);
+      const success = await ctx.qte(r.label.replace(/&mdash;/g, '\u2014'), r.key, r.ms);
       if (success) {
         OTR.audio.sword();
-        knight.userData.rarm && (knight.userData.rarm.rotation.z -= 0.15);
         i++;
-        await new Promise(res => setTimeout(res, 300));
+        await new Promise(res => setTimeout(res, 320));
       } else {
-        // a miss: take a hit, retry the same round
+        wounds++;
         OTR.ui.damage();
         OTR.audio.stinger('hit');
-        await ctx.say([{ name: '', text: '<span class="dim">His blow lands. You reel &mdash; but keep your feet.</span>' }]);
+        if (wounds >= 3) {
+          OTR.ui.letterbox(false);
+          ctx.fail('duel', 'The sabre finds you a third time. You fall among the rocks, and the knight passes on to Isabella.');
+          return;
+        }
+        await ctx.say([{ name: '', text: `<span class="dim">His blow lands. You reel &mdash; ${wounds === 1 ? 'a first wound' : 'a second wound; one more will finish you'}.</span>` }]);
       }
     }
     OTR.ui.letterbox(false);

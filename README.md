@@ -1,4 +1,4 @@
-v 0.2
+v 0.3
 # The Castle of Otranto — a playable 3D Gothic tale
 
 A browser-playable, first-person 3D adaptation of Horace Walpole's *The Castle
@@ -35,6 +35,14 @@ recognise specific scenes, and the dialogue is drawn from the book itself:
    strikes down Matilda; then the walls are thrown down and the shade of Alfonso
    rises: *"Behold in Theodore the true heir of Alfonso!"*
 
+**Play:** the interiors are stealth. Manfred's torch-bearing domestics walk
+set rounds; their light announces them around corners, and an eye on the HUD
+fills while one can see you. Crouch behind chests and buttresses, hood the
+lamp when the torchlight comes near, and never run within earshot. Caught
+means back to the last checkpoint. The duel in the wood is a guard-and-strike
+exchange — parry the way he cuts, strike the openings, and three wounds will
+finish you. Five relics, one per chapter, are hidden for those who look.
+
 **Tone:** the exterior chapters are warm and open (courtyard, countryside,
 church, the moonlit wood); the interiors are cold, oppressive, and close (the
 casque, the vaults, the tower, the tomb), with a lamp that gutters in the drafts,
@@ -51,7 +59,10 @@ a chapter-select appears on the title screen for anything you've reached.
 | --- | --- |
 | Move | **W A S D** (or arrow keys) |
 | Look | **Mouse** (click once to lock the pointer) |
-| Run | **Shift** |
+| Run | **Shift** (louder: searchers hear you) |
+| Crouch | **C** (or **Ctrl**) — smaller, slower, hidden behind low cover |
+| Hood the lamp | **F** (in the vaults) — near-invisible, near-blind |
+| Duel guards | **W** high guard · **S** low guard · **A / D** sidestep · **Space** strike |
 | Interact / advance dialogue | **E** (or click, or **Space**) |
 | Duel / prompts | **Space** |
 | Pause / release mouse | **Esc** |
