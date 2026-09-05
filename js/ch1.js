@@ -18,15 +18,18 @@
     build(world, ctx) {
       const scene = world.scene;
       // ---- sky & light: warm late afternoon ----
-      const sunDir = new THREE.Vector3(28, 46, 38).normalize();
+      // A high, clear afternoon: deep blue zenith, white cumulus, a hard sun.
+      // The brightness here is the other half of the vaults' darkness.
+      const sunDir = new THREE.Vector3(26, 52, 34).normalize();
       OTR.materials.sky(world, {
         seed: 3,
-        top: 0x2a5a9c, high: 0x86aad2, horizon: 0xe6d2a0, ground: 0x5c5844, groundDeep: 0x34301f,
-        sunDir, sunColor: 0xffeccb, clouds: 0.9, cloudLit: 0xfff3da, cloudShade: 0xb9c6da,
-        haze: 0.8, envIntensity: 0.55
+        top: 0x1e56b0, high: 0x5f97d9, horizon: 0xdfe4ea, ground: 0x66634c, groundDeep: 0x3a3624,
+        sunDir, sunColor: 0xfff4de, clouds: 1, cover: 0.52, cloudScale: 2.6, cirrus: 0.4,
+        cloudLit: 0xffffff, cloudShade: 0x9db0c8, cloudAlpha: 1,
+        haze: 0.55, hazeColor: 0xe6e9ee, envIntensity: 0.6
       });
-      world.setFog(0xcdbf9e, 40, 190);
-      const sun = world.sun(0xffe6b4, 2.5, new THREE.Vector3(28, 46, 38), 0xbcd0ea, 0.55);
+      world.setFog(0xd9dde3, 55, 230);
+      const sun = world.sun(0xfff0d0, 2.7, new THREE.Vector3(26, 52, 34), 0xbcd0ea, 0.6);
       sun.target.position.set(0, 0, 0);
       // sky fill from the opposite side so shadowed faces are not black
       const fill = new THREE.DirectionalLight(0x9fb6d8, 0.32);
@@ -35,7 +38,7 @@
       // detail instead of clipping to white under the strong sun + IBL.
       OTR.game.renderer.toneMappingExposure = 0.95;
       if (OTR.game.postfx) {
-        OTR.game.postfx.setGrade({ tint: 0xfff4e4, saturation: 1.05 });
+        OTR.game.postfx.setGrade({ tint: 0xfff6ec, saturation: 1.1 });
         OTR.game.postfx.setGodrays(sunDir, { strength: 0.26, color: 0xffe2b0 });
       }
       document.getElementById('vignette').style.opacity = 0.5;
