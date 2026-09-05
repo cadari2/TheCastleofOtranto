@@ -38,10 +38,7 @@
     const spot = new THREE.SpotLight(0x9fb4e0, intensity, 26, 0.5, 0.7, 1.0);
     spot.position.set(x, 12, z); spot.target.position.set(x, 0, z);
     world.scene.add(spot); world.scene.add(spot.target);
-    const beam = P().mesh(new THREE.ConeGeometry(1.8, 11, 18, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0x9fb4e0, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }),
-      x, 5.5, z, { cast: false, receive: false });
-    world.add(beam);
+    P().lightShaft(world, x, 5.5, z, { height: 11, radiusTop: 0.5, radiusBottom: 1.9, color: 0x9fb4e0, opacity: 0.16 });
     const hole = P().mesh(new THREE.CircleGeometry(1.8, 16), new THREE.MeshBasicMaterial({ color: 0x11151f, fog: false }), x, 4.4, z, { cast: false });
     hole.rotation.x = Math.PI / 2; world.add(hole);
     world.particles(26, { x0: x - 1.6, x1: x + 1.6, y0: 0.2, y1: 9, z0: z - 1.6, z1: z + 1.6 }, 0xb8c8ec, 0.045, 0.04);
@@ -51,7 +48,8 @@
   OTR.chapters[2] = {
     name: 'The Vaults',
     quote: '&ldquo;An awful silence reigned throughout those subterraneous regions&hellip;&rdquo;',
-    ambience: { drone: { freqs: [42, 63, 84], gain: 0.06 }, wind: 0.02 },
+    adapt: { from: 0.28, seconds: 9 }, // out of the daylight: the vault resolves slowly
+    ambience: { drone: { freqs: [42, 63, 84], gain: 0.06 }, wind: 0.02, scatter: [['drip', 2500, 9000]] },
 
     build(world, ctx) {
       const scene = world.scene;
@@ -141,7 +139,7 @@
       ctx.objective('Take up the fallen lamp');
       const lampProp = P().mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.3, 10), L().metal, 1.5, 0.2, -1.5);
       world.add(lampProp);
-      const lampGlow = new THREE.PointLight(0xffb45a, 0.6, 4, 2); lampGlow.position.set(1.5, 0.4, -1.5); world.add(lampGlow);
+      const lampGlow = new THREE.PointLight(0xffb45a, 1.3, 6, 2); lampGlow.position.set(1.5, 0.4, -1.5); world.add(lampGlow);
       world.addInteractable({
         x: 1.5, z: -1.5, r: 2, once: true, prompt: 'Take up the lamp',
         onUse: async () => {

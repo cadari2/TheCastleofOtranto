@@ -18,6 +18,7 @@
   OTR.chapters[3] = {
     name: 'The Black Tower',
     quote: '&ldquo;Fly; the doors of thy prison are open&hellip; may the angels of heaven direct thy course!&rdquo;',
+    adapt: { from: 0.5, seconds: 5 },
     ambience: { wind: 0.14, drone: { freqs: [40, 60], gain: 0.04 } },
 
     build(world, ctx) {

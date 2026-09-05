@@ -111,8 +111,22 @@
     if (profile.birds) { beds.birds = { level: profile.birds, stop: () => {} }; startBirds(); }
     if (profile.drone) beds.drone = makeDrone(profile.drone.freqs, profile.drone.gain);
     if (profile.sea) beds.sea = makeSea();
+    (profile.scatter || []).forEach(([name, lo, hi]) => A.scatter(name, lo, hi));
+  };
+  // Sparse one-shots at random intervals (owl in the wood, drips in the
+  // vaults). Each call keeps one timer chain; all are cleared with the beds.
+  const scatterTimers = [];
+  A.scatter = function (name, minMs, maxMs) {
+    if (!ctx || !A[name]) return;
+    const rec = { t: null };
+    const tick = () => {
+      rec.t = setTimeout(() => { A[name](); tick(); }, minMs + Math.random() * (maxMs - minMs));
+    };
+    tick();
+    scatterTimers.push(rec);
   };
   A.stopAmbience = function () {
+    scatterTimers.forEach(r => clearTimeout(r.t)); scatterTimers.length = 0;
     if (birdTimer) { clearTimeout(birdTimer); birdTimer = null; }
     Object.keys(beds).forEach(k => { try { beds[k].stop && beds[k].stop(); } catch (e) {} delete beds[k]; });
   };
@@ -129,6 +143,50 @@
     g.gain.exponentialRampToValueAtTime(0.0005, t + (hard ? 0.09 : 0.14));
     src.connect(bp); bp.connect(g); g.connect(master);
     src.start(t); src.stop(t + 0.2);
+  };
+
+  // distant owl: two soft hoots, low-passed and panned off to one side
+  A.owl = function () {
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    const out = ctx.createGain(); out.gain.value = 1;
+    if (pan) { pan.pan.value = (Math.random() * 2 - 1) * 0.8; out.connect(pan); pan.connect(ambientGain); }
+    else out.connect(ambientGain);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.connect(out);
+    const f0 = 330 + Math.random() * 60;
+    [[0, 0.32], [0.48, 0.55]].forEach(([d, len]) => {
+      const t = t0 + d;
+      const o = ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * 0.92, t + len);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.055, t + 0.06);
+      g.gain.setValueAtTime(0.055, t + len - 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0002, t + len + 0.05);
+      o.connect(g); g.connect(lp); o.start(t); o.stop(t + len + 0.1);
+    });
+  };
+
+  // a single water drop in a stone room: a short high tick with a small
+  // ringing tail, at a random pitch and position
+  A.drip = function () {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    const out = ctx.createGain(); out.gain.value = 0.6 + Math.random() * 0.4;
+    if (pan) { pan.pan.value = Math.random() * 2 - 1; out.connect(pan); pan.connect(ambientGain); }
+    else out.connect(ambientGain);
+    const f = 1500 + Math.random() * 1800;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f * 1.4, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0003, t + 0.18);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.2);
+    // the echo off the vault
+    const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f * 0.5;
+    const g2 = ctx.createGain(); g2.gain.setValueAtTime(0, t + 0.12);
+    g2.gain.linearRampToValueAtTime(0.012, t + 0.16); g2.gain.exponentialRampToValueAtTime(0.0002, t + 0.7);
+    o2.connect(g2); g2.connect(out); o2.start(t + 0.12); o2.stop(t + 0.75);
   };
 
   A.bell = function (n = 1, base = 220) {

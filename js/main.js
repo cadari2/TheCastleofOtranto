@@ -118,6 +118,7 @@
     document.getElementById('toast').style.opacity = 0;
     OTR.ui.letterbox(false);
     document.getElementById('damage').style.opacity = 0;
+    G.adapt = null;
     OTR.game.renderer.toneMappingExposure = 1.05;
     if (G.postfx) G.postfx.resetGrade();
 
@@ -152,6 +153,14 @@
     // build geometry & script
     chapter.build(world, ctx);
 
+    // Eye adaptation: chapters declare how far from their target exposure
+    // the player's eyes start (dark vaults resolve slowly out of the glare;
+    // the courtyard blooms white before it settles). The ramp is armed once
+    // the title card has passed and the real fade-in begins.
+    G.adapt = null;
+    const adaptSpec = world.adaptOverride || chapter.adapt; // a beat may override
+    if (adaptSpec) G.renderer.toneMappingExposure *= adaptSpec.from;
+
     // set ambience
     if (chapter.ambience) OTR.audio.setAmbience(chapter.ambience);
 
@@ -170,6 +179,7 @@
         chapter.quote || ''
       );
     }
+    if (adaptSpec) adaptExposure(adaptSpec.from, adaptSpec.seconds, true);
     await OTR.ui.fadeIn(1200);
 
     // request pointer lock
@@ -178,6 +188,17 @@
     // kick off scripted intro if present
     if (chapter.onEnter) chapter.onEnter(world, ctx);
   }
+
+  // Start an exposure ramp toward the renderer's current target exposure.
+  // from: multiplier the ramp starts at; seconds: duration. If `alreadyApplied`
+  // the renderer is already sitting at target*from (see startChapter).
+  function adaptExposure(from, seconds, alreadyApplied) {
+    const cur = G.renderer.toneMappingExposure;
+    const target = alreadyApplied ? cur / from : cur;
+    G.adapt = { from: target * from, to: target, t: 0, dur: Math.max(0.1, seconds || 4) };
+    G.renderer.toneMappingExposure = G.adapt.from;
+  }
+  G.adaptExposure = adaptExposure;
 
   function nextChapter() {
     const n = G.chapter + 1;
@@ -276,6 +297,12 @@
     let dt = (now - last) / 1000; last = now;
     dt = Math.min(dt, 0.05);
 
+    if (G.adapt && !G.paused) {
+      const a = G.adapt; a.t += dt;
+      const k = OTR.smoothstep(0, 1, a.t / a.dur);
+      G.renderer.toneMappingExposure = a.from + (a.to - a.from) * k;
+      if (a.t >= a.dur) { G.renderer.toneMappingExposure = a.to; G.adapt = null; }
+    }
     if (G.running && !G.paused && !G.transitioning) {
       // interaction / dialogue advance
       const inp = OTR.input;

@@ -13,7 +13,8 @@
   OTR.chapters[5] = {
     name: 'The Tomb of Alfonso',
     quote: '&ldquo;Behold in Theodore the true heir of Alfonso!&rdquo;',
-    ambience: { drone: { freqs: [40, 60, 80], gain: 0.06 }, wind: 0.03 },
+    adapt: { from: 0.4, seconds: 7 },
+    ambience: { drone: { freqs: [40, 60, 80], gain: 0.06 }, wind: 0.03, scatter: [['drip', 6000, 18000]] },
 
     build(world, ctx) {
       const scene = world.scene;
@@ -90,10 +91,7 @@
     const spot = new THREE.SpotLight(0xaec2ec, 3.0, 40, 0.4, 0.7, 1.0);
     spot.position.set(0, 16, 4); spot.target.position.set(0, 0, 8);
     world.scene.add(spot); world.scene.add(spot.target);
-    const beam = P().mesh(new THREE.ConeGeometry(2.4, 16, 20, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xaec2ec, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide }),
-      0, 8, 6, { cast: false });
-    world.add(beam);
+    P().lightShaft(world, 0, 8, 6, { height: 16, radiusTop: 0.5, radiusBottom: 2.6, color: 0xaec2ec, opacity: 0.11, dir: new THREE.Vector3(0, -16, 4) });
     // altar
     world.add(P().mesh(new THREE.BoxGeometry(4, 1.4, 1.6), L().marbleTomb, 0, 0.7, 20));
     world.add(P().mesh(new THREE.RingGeometry(0.5, 0.7, 16), L().gold, 0, 2.6, 20.7, { cast: false }));
