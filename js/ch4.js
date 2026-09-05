@@ -78,7 +78,8 @@
         const x = (rng() - 0.5) * 200, z = -20 + rng() * 90;
         if (Math.abs(x) < 5 && z < 76) continue;    // keep the path (and the cleft) clear
         if (z > shoreZ - 6) continue;               // no trees on the beach
-        P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12);
+        // fringe only where the crowns stand against the moon: near the path
+        P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12, { fringe: Math.abs(x) < 34 });
       }
       // undergrowth: swaying grass tufts along the wood (thins near the beach)
       P().grassField(world, { x0: -55, x1: 55, z0: -20, z1: 62 }, 2000, {

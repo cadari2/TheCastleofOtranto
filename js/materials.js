@@ -346,6 +346,31 @@
       t.colorSpace = THREE.SRGBColorSpace;
       return t;
     })();
+    // leaf-cluster card for the crown fringe: pointed leaves radiating from
+    // a loose centre, alpha-tested so the silhouette is leaves, not a disc
+    lib.leafCardTex = (function () {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const ctx = c.getContext('2d');
+      const rnd = OTR.rng(83);
+      for (let i = 0; i < 110; i++) {
+        const a = rnd() * Math.PI * 2, rr = 18 + Math.pow(rnd(), 0.7) * 92;
+        const x = 128 + Math.cos(a) * rr, y = 128 + Math.sin(a) * rr;
+        const len = 16 + rnd() * 22, wid = 5 + rnd() * 5;
+        const g = 105 + rnd() * 70;
+        ctx.fillStyle = `rgb(${g * 0.5 | 0},${g | 0},${g * 0.38 | 0})`;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a + (rnd() - 0.5) * 0.8);
+        ctx.beginPath();
+        ctx.moveTo(-len * 0.5, 0);
+        ctx.quadraticCurveTo(0, -wid, len * 0.5, 0);
+        ctx.quadraticCurveTo(0, wid, -len * 0.5, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = M.anisotropy;
+      return t;
+    })();
     // foliage billboard: painterly leaf cluster with alpha
     lib.leafTex = (function () {
       const c = document.createElement('canvas'); c.width = c.height = 256;

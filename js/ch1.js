@@ -77,7 +77,7 @@
         const a = Math.random() * Math.PI * 2, d = 34 + Math.random() * 120;
         const x = Math.cos(a) * d, z = Math.sin(a) * d;
         if (Math.abs(x) < 10 && z > R && z < R + 40) continue; // keep church approach clear
-        P().tree(world, x, z, 0.7 + Math.random() * 0.7, -0.04);
+        P().tree(world, x, z, 0.7 + Math.random() * 0.7, -0.04, 0.34, { fringe: d < 110 });
       }
 
       // meadow grass beyond the north gate, along the church approach

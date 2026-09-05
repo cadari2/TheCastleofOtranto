@@ -134,9 +134,8 @@ between before and after captures at matched views).
 
 ### Open for next time
 
-- Tree crowns are still faceted icosahedra in silhouette against the moon.
-  A cheap fix: a ring of alpha-tested leaf cards on the crown's outer shell
-  for trees within ~40 m of the path only.
+- ~~Tree crowns are still faceted icosahedra in silhouette against the
+  moon.~~ Done in session 2 (crown fringe, below).
 - The sea is a flat plane with vertex waves; it needs a moon glitter
   (normal-mapped ripples) and a foam line at the beach.
 - Ch. III (the tower) was left untouched this pass beyond the sky; its
@@ -148,3 +147,26 @@ between before and after captures at matched views).
   when the drawing buffer exceeds ~3 Mpx).
 - No build step was introduced; none is needed. Upload is still "copy the
   folder" (see README).
+
+---
+
+## Session 2 — 2026-09-05 — crown fringe (follow-up to PR #8)
+
+**Tree silhouettes.** `props.tree` takes `opts.fringe`: each foliage lobe
+gets 9 + 3·r alpha-tested leaf-cluster cards seated on its outer shell,
+facing outward with a random roll, merged into one geometry per tree
+(one extra draw call). A new `leafCardTex` (110 pointed leaves radiating
+from a loose centre) replaces the old unused ellipse cluster for this. The
+cards are on layer 1 so the SSAO depth prepass — which ignores alphaTest —
+cannot draw square halos around them; they receive shadows but do not cast
+(the lobes already do). Applied to wood trees within 34 m of the path and
+courtyard trees within 110 m; far trees keep the cheap lobes and dissolve
+in fog anyway.
+
+Verified: Ch. IV crowns against the moon read as leafy, ragged edges rather
+than facet outlines; the courtyard tree by the gate tower shows the fringe
+in daylight. Ch. IV wood view: 2418 → 2532 draw calls, 471 k → 498 k
+triangles. No page errors.
+
+Open: the fringe does not sway with the grass wind; the unfringed far
+trees are still domes when the fog is thin (the beach looking back).
