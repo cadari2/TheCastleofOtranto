@@ -13,7 +13,8 @@
   OTR.chapters[4] = {
     name: 'The Wood and the Shore',
     quote: '&ldquo;A chain of rocks, hollowed into a labyrinth of caverns that reach to the sea coast.&rdquo;',
-    ambience: { wind: 0.16, sea: true, drone: { freqs: [38, 57], gain: 0.03 } },
+    adapt: { from: 0.45, seconds: 6 },
+    ambience: { wind: 0.16, sea: true, drone: { freqs: [38, 57], gain: 0.03 }, scatter: [['owl', 9000, 26000]] },
 
     build(world, ctx) {
       const scene = world.scene;
@@ -21,13 +22,16 @@
       OTR.materials.sky(world, {
         seed: 13,
         top: 0x050a16, high: 0x101c33, horizon: 0x1f2c48, ground: 0x070a10, groundDeep: 0x04050a,
-        sunDir: moonDir, sunColor: 0xdfe8ff, moon: true, discR: 30, haloR: 300,
-        stars: 0.9, clouds: 0.65, cloudLit: 0x9fb2dc, cloudShade: 0x1e2840, cloudAlpha: 0.9,
+        sunDir: moonDir, sunColor: 0xdfe8ff, moon: true, discDeg: 2.6, sunGlow: 0.8,
+        stars: 0.9, clouds: 1, cover: 0.36, cloudScale: 2.4, cirrus: 0.25,
+        cloudLit: 0x9fb2dc, cloudShade: 0x1a2238, cloudAlpha: 0.95,
         haze: 0.6, hazeColor: 0x1a2440, envIntensity: 0.7
       });
-      world.setFog(0x0b1220, 14, 120);
-      const moon = world.sun(0x9fb2dc, 1.0, new THREE.Vector3(-30, 40, 20), 0x263a5c, 0.34, { area: 45, follow: true });
-      OTR.game.renderer.toneMappingExposure = 1.05;
+      // Thick night mist: the wood swallows itself a few trees deep. The
+      // shore (z ~ 78) only resolves once the path has dropped toward it.
+      world.setFog(0x0b1220, 6, 78);
+      const moon = world.sun(0x9fb2dc, 1.25, new THREE.Vector3(-30, 40, 20), 0x2b4066, 0.42, { area: 45, follow: true });
+      OTR.game.renderer.toneMappingExposure = 1.12;
       if (OTR.game.postfx) {
         OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
         OTR.game.postfx.setGodrays(moonDir, { strength: 0.24, color: 0xb9c9ec });
@@ -35,24 +39,29 @@
       document.getElementById('vignette').style.opacity = 0.8;
 
       // ---- terrain: forest floor sloping down to a beach (+Z = seaward) ----
-      const shoreZ = 78;
+      // The wood rolls, then falls in one continuous slope to a beach that
+      // meets the sea at the water line — the terrain never dips under the
+      // sea plane (it used to: the sea surface hid the whole approach).
+      const shoreZ = 78, seaY = -3.6;
       world.groundFn = (x, z) => {
-        if (z > shoreZ) return -1.2; // sea level (below beach)
-        let h = OTR.fbm(x * 0.02, z * 0.02, 4) * 3.0;
-        // slope down toward the shore
-        h += OTR.smoothstep(30, shoreZ, z) * -4.5;
-        // carve a rough path down the middle
+        if (z > shoreZ + 6) return seaY - 0.3; // under the water
+        const flat = OTR.smoothstep(46, shoreZ, z);          // the beach smooths out
+        let h = OTR.fbm(x * 0.02, z * 0.02, 4) * 3.0 * (1 - flat * 0.85);
+        h += OTR.smoothstep(24, shoreZ, z) * -3.3;           // the fall to the shore
+        h -= OTR.smoothstep(shoreZ - 4, shoreZ + 6, z) * 0.6; // the water's edge
         const path = Math.exp(-(x * x) / 60) * 1.5;
-        h -= path * OTR.smoothstep(0, 40, z) * 0.6;
+        h -= path * OTR.smoothstep(0, 40, z) * 0.6 * (1 - flat);
         return h;
       };
       P().terrain(world, 260, 130, L().forestFloor, world.groundFn);
+      L().forestFloor.color.set(0x6f7890); // moon-blued leaf litter, not daylight loam
       world.hardFloor = false;
       OTR.player.eyeHeight = 1.68;
 
       // ---- the sea ----
-      const seaMat = new THREE.MeshStandardMaterial({ color: 0x14243c, roughness: 0.2, metalness: 0.4, transparent: true, opacity: 0.9 });
-      const sea = P().mesh(new THREE.PlaneGeometry(400, 200, 40, 20), seaMat, 0, -1.2, shoreZ + 60, { cast: false, receive: false });
+      // slightly rough so the moon breaks into a broad glitter, not a mirror
+      const seaMat = new THREE.MeshStandardMaterial({ color: 0x0e1a2c, roughness: 0.32, metalness: 0.55, transparent: true, opacity: 0.92 });
+      const sea = P().mesh(new THREE.PlaneGeometry(400, 200, 40, 20), seaMat, 0, seaY, shoreZ + 96, { cast: false, receive: false });
       sea.rotation.x = -Math.PI / 2; world.add(sea);
       const seaBase = sea.geometry.attributes.position.array.slice();
       world.addUpdater((dt, e) => {
@@ -67,7 +76,7 @@
       const rng = OTR.rng(41);
       for (let i = 0; i < 150; i++) {
         const x = (rng() - 0.5) * 200, z = -20 + rng() * 90;
-        if (Math.abs(x) < 4 && z < 60) continue;    // keep the path clear
+        if (Math.abs(x) < 5 && z < 76) continue;    // keep the path (and the cleft) clear
         if (z > shoreZ - 6) continue;               // no trees on the beach
         P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12);
       }
@@ -87,8 +96,32 @@
       // ---- the sea caves: a rocky headland with cave mouths near the shore ----
       buildCaves(world, 0, shoreZ - 6);
 
-      // moon mist hanging between the trees
-      P().mist(world, { x0: -55, x1: 55, z0: -18, z1: 48 }, 0.7, { color: 0x9fb2d8, opacity: 0.10, gap: 0.5 });
+      // moon mist hanging between the trees: a low crawling bed and a taller,
+      // thinner drift at head height
+      P().mist(world, { x0: -60, x1: 60, z0: -20, z1: 52 }, 0.35, { color: 0x9fb2d8, opacity: 0.17, gap: 0.45, layers: 3 });
+      P().mist(world, { x0: -50, x1: 50, z0: -16, z1: 46 }, 1.9, { color: 0x8ea3cc, opacity: 0.07, gap: 0.7, layers: 2 });
+      // sea mist creeping up the beach
+      P().mist(world, { x0: -60, x1: 60, z0: 60, z1: 96 }, seaY + 0.25, { color: 0x9fb2d8, opacity: 0.13, gap: 0.5, layers: 2 });
+
+      // moonlight breaking through the canopy: thin shafts along the moon's
+      // direction, scattered off the path so the player walks between them
+      {
+        const srng = OTR.rng(97);
+        const down = moonDir.clone().negate(); // light travels away from the moon
+        for (let i = 0; i < 16; i++) {
+          const x = (srng() - 0.5) * 70, z = -12 + srng() * 66;
+          if (Math.abs(x) < 3.5) continue;
+          const gy = world.groundHeight(x, z);
+          const hgt = 12 + srng() * 5;
+          // position is the shaft's centre; the top sits up in the crowns
+          const top = new THREE.Vector3(x, gy + hgt, z);
+          const c = top.clone().addScaledVector(down, hgt * 0.5);
+          P().lightShaft(world, c.x, c.y, c.z, {
+            height: hgt, radiusTop: 0.12 + srng() * 0.2, radiusBottom: 0.7 + srng() * 0.9,
+            color: 0x9fb2dc, opacity: 0.045 + srng() * 0.035, dir: down
+          });
+        }
+      }
 
       // fireflies / drifting spores in the wood
       world.particles(70, { x0: -60, x1: 60, y0: 0.5, y1: 6, z0: -10, z1: 70 }, 0x8fb0d0, 0.05, 0.1);
@@ -148,22 +181,30 @@
   };
 
   function buildCaves(world, cx, cz) {
-    // a headland ridge with cave openings
+    // a headland ridge with cave openings, split by a cleft at the path so
+    // the beach and the open sea show through as the wood ends
     const ridgeMat = L().caveRock;
+    const rng = OTR.rng(613);
     for (let i = -3; i <= 3; i++) {
-      const x = cx + i * 9 + (Math.random() - 0.5) * 3;
+      if (i === 0) continue; // the cleft
+      const x = cx + i * 9 + (rng() - 0.5) * 3 + (i < 0 ? -2.5 : 2.5);
       const gy = world.groundHeight(x, cz);
-      const rock = P().mesh(new THREE.DodecahedronGeometry(6 + Math.random() * 3, 1), ridgeMat, x, gy + 2, cz);
-      rock.scale.set(1.4, 1.6 + Math.random() * 0.6, 1.2);
-      rock.rotation.set(Math.random(), Math.random(), Math.random());
+      const rock = P().mesh(new THREE.DodecahedronGeometry(6 + rng() * 3, 1), ridgeMat, x, gy + 2, cz);
+      rock.scale.set(1.4, 1.6 + rng() * 0.6, 1.2);
+      rock.rotation.set(rng(), rng(), rng());
       world.add(rock);
       world.cyl(x, cz, 4.5, gy - 2, gy + 8);
     }
-    // one dark cave interior behind the ridge (the concealment)
+    // the cave mouth opens off the cleft (the concealment)
     const caveMat = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 1, side: THREE.BackSide });
-    const cave = P().mesh(new THREE.SphereGeometry(7, 20, 14), caveMat, cx - 2, world.groundHeight(cx - 2, cz + 4) + 2, cz + 5, { cast: false });
+    const cave = P().mesh(new THREE.SphereGeometry(7, 20, 14), caveMat, cx - 9, world.groundHeight(cx - 9, cz + 4) + 2, cz + 5, { cast: false });
     world.add(cave);
-    const caveGlow = new THREE.PointLight(0x4a6a9a, 0.8, 16, 2); caveGlow.position.set(cx - 2, 2, cz + 4); world.add(caveGlow);
+    const caveGlow = new THREE.PointLight(0x4a6a9a, 0.8, 16, 2); caveGlow.position.set(cx - 9, 2, cz + 4); world.add(caveGlow);
+    // a few wet boulders down on the sand
+    for (let i = 0; i < 7; i++) {
+      const x = (rng() - 0.5) * 60, z = cz + 8 + rng() * 10;
+      P().rock(world, x, z, 0.6 + rng() * 1.3, world.groundHeight(x, z), L().caveRock);
+    }
   }
 
   function setupDuel(world, ctx, resumed) {

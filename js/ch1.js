@@ -13,20 +13,24 @@
   OTR.chapters[1] = {
     name: 'The Helmet',
     quote: '&ldquo;Oh! the helmet! the helmet!&rdquo;',
+    adapt: { from: 1.9, seconds: 4 }, // stepping out into the glare
     ambience: { wind: 0.05, birds: 0.8 },
 
     build(world, ctx) {
       const scene = world.scene;
       // ---- sky & light: warm late afternoon ----
-      const sunDir = new THREE.Vector3(28, 46, 38).normalize();
+      // A high, clear afternoon: deep blue zenith, white cumulus, a hard sun.
+      // The brightness here is the other half of the vaults' darkness.
+      const sunDir = new THREE.Vector3(26, 52, 34).normalize();
       OTR.materials.sky(world, {
         seed: 3,
-        top: 0x2a5a9c, high: 0x86aad2, horizon: 0xe6d2a0, ground: 0x5c5844, groundDeep: 0x34301f,
-        sunDir, sunColor: 0xffeccb, clouds: 0.9, cloudLit: 0xfff3da, cloudShade: 0xb9c6da,
-        haze: 0.8, envIntensity: 0.55
+        top: 0x1e56b0, high: 0x5f97d9, horizon: 0xdfe4ea, ground: 0x66634c, groundDeep: 0x3a3624,
+        sunDir, sunColor: 0xfff4de, clouds: 1, cover: 0.52, cloudScale: 2.6, cirrus: 0.4,
+        cloudLit: 0xffffff, cloudShade: 0x9db0c8, cloudAlpha: 1,
+        haze: 0.55, hazeColor: 0xe6e9ee, envIntensity: 0.6
       });
-      world.setFog(0xcdbf9e, 40, 190);
-      const sun = world.sun(0xffe6b4, 2.5, new THREE.Vector3(28, 46, 38), 0xbcd0ea, 0.55);
+      world.setFog(0xd9dde3, 55, 230);
+      const sun = world.sun(0xfff0d0, 2.7, new THREE.Vector3(26, 52, 34), 0xbcd0ea, 0.6);
       sun.target.position.set(0, 0, 0);
       // sky fill from the opposite side so shadowed faces are not black
       const fill = new THREE.DirectionalLight(0x9fb6d8, 0.32);
@@ -35,7 +39,7 @@
       // detail instead of clipping to white under the strong sun + IBL.
       OTR.game.renderer.toneMappingExposure = 0.95;
       if (OTR.game.postfx) {
-        OTR.game.postfx.setGrade({ tint: 0xfff4e4, saturation: 1.05 });
+        OTR.game.postfx.setGrade({ tint: 0xfff6ec, saturation: 1.1 });
         OTR.game.postfx.setGodrays(sunDir, { strength: 0.26, color: 0xffe2b0 });
       }
       document.getElementById('vignette').style.opacity = 0.5;
@@ -83,7 +87,7 @@
       });
 
       // pollen motes in the sun
-      world.particles(90, { x0: -R, x1: R, y0: 0.5, y1: 8, z0: -R, z1: R }, 0xfff0c8, 0.06, 0.15);
+      world._pollen = world.particles(90, { x0: -R, x1: R, y0: 0.5, y1: 8, z0: -R, z1: R }, 0xfff0c8, 0.06, 0.15);
 
       // ---- the giant helmet, crushing Conrad ----
       const helmet = P().giantHelmet(world, 0, 0, 2, 1.0);
@@ -150,6 +154,7 @@
           // enterConfined rebuilds the scene while black; fade back in so play
           // resumes. (The resume-from-checkpoint path fades in via startChapter,
           // but this mid-chapter transition must do it itself.)
+          OTR.game.adaptExposure && OTR.game.adaptExposure(0.3, 7);
           await OTR.ui.fadeIn(1400);
         }
       });
@@ -168,6 +173,7 @@
     if (world.sunLight) world.sunLight.intensity = 0.2;
     if (world.hemi) { world.hemi.intensity = 0.35; world.hemi.color.set(0x50607a); world.hemi.groundColor.set(0x1a1510); }
     OTR.game.renderer.toneMappingExposure = 1.0;
+    world.adaptOverride = { from: 0.3, seconds: 7 }; // resumed here: no daylight glare ramp
     document.getElementById('vignette').style.opacity = 0.82;
     OTR.audio.setAmbience({ wind: 0.03, drone: { freqs: [44, 66], gain: 0.06 } });
 
@@ -183,6 +189,8 @@
       if (hc) { hc.r = 0.01; hc.x = 9999; hc.z = 9999; }
     }
     if (world._mound) world._mound.visible = false;
+    if (world._pollen) world._pollen.visible = false; // no sunlit motes inside the iron
+    if (world.skyDome) world.skyDome.visible = false; // the casque seals the sky out
 
     // Build a dark iron enclosure AROUND the player: the underside of the casque.
     const CX = 0, CZ = 2;
@@ -218,9 +226,10 @@
     // dust motes catching the shaft
     world.particles(40, { x0: CX - 2, x1: CX + 2, y0: 0.3, y1: 8, z0: CZ - 1, z1: CZ + 3 }, 0xffe6c0, 0.05, 0.05);
     // visible volumetric shaft (additive cone)
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0xffe6b8, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
-    const beam = OTR.props.mesh(new THREE.ConeGeometry(1.4, 10, 16, 1, true), beamMat, CX + 0.9, 5, CZ + 1.7, { cast: false, receive: false });
-    world.add(beam);
+    OTR.props.lightShaft(world, CX + 0.9, 5, CZ + 1.7, {
+      height: 10, radiusTop: 0.25, radiusBottom: 1.5, color: 0xffe6b8, opacity: 0.22,
+      dir: new THREE.Vector3(0.7, -11, 1.4)
+    });
     // visible slit of sky
     const slit = OTR.props.mesh(new THREE.PlaneGeometry(1.6, 0.18), new THREE.MeshBasicMaterial({ color: 0xbcd4f0, fog: false }), CX + 0.4, 8.4, CZ + 4.7, { cast: false });
     world.add(slit);
@@ -241,9 +250,7 @@
     // cool glow rising from the vault below
     const under = new THREE.PointLight(0x6f8fd0, 3.5, 14, 2); under.position.set(gapX, -0.4, gapZ); world.add(under);
     // faint blue beam rising from the broken pavement to mark the descent
-    const upMat = new THREE.MeshBasicMaterial({ color: 0x7fa0e0, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide });
-    const upBeam = OTR.props.mesh(new THREE.CylinderGeometry(1.3, 1.5, 4, 16, 1, true), upMat, gapX, 2, gapZ, { cast: false, receive: false });
-    world.add(upBeam);
+    OTR.props.lightShaft(world, gapX, 2, gapZ, { height: 4, radiusTop: 1.3, radiusBottom: 1.0, color: 0x7fa0e0, opacity: 0.2, dir: new THREE.Vector3(0, 1, 0) });
     // floor inside the shell so we stand on stone, not void
     OTR.props.floor(world, CX, CZ, 11, 11, 0.0, L().vaultStone);
 

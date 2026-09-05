@@ -723,8 +723,13 @@
     const geo = new THREE.DodecahedronGeometry(scale, 1);
     const pos = geo.attributes.position;
     const r = OTR.rng((x * 31 + z * 17) | 0 || 1);
+    // coherent displacement (neighbouring vertices move together) so the
+    // boulder goes lumpy, not spiky; one squash per axis for the overall form
+    const sx = 0.85 + r() * 0.4, sy = 0.7 + r() * 0.35, sz = 0.85 + r() * 0.4, seed = r() * 40;
     for (let i = 0; i < pos.count; i++) {
-      pos.setXYZ(i, pos.getX(i) * (0.8 + r() * 0.5), pos.getY(i) * (0.7 + r() * 0.4), pos.getZ(i) * (0.8 + r() * 0.5));
+      const px = pos.getX(i) / scale, py = pos.getY(i) / scale, pz = pos.getZ(i) / scale;
+      const k = 0.9 + 0.28 * OTR.fbm(px * 1.4 + seed, (py + pz * 0.7) * 1.4 - seed, 2);
+      pos.setXYZ(i, pos.getX(i) * sx * k, pos.getY(i) * sy * k, pos.getZ(i) * sz * k);
     }
     geo.computeVertexNormals();
     const m = mesh(geo, material || lib().rock, x, groundY + scale * 0.4, z);
@@ -772,6 +777,18 @@
         map, color, transparent: true, depthWrite: false,
         opacity: (opts.opacity != null ? opts.opacity : 0.16) * (1 - i * 0.22)
       });
+      // feather the sheet's rectangular edges so the bank never shows a rim
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec2 vMistEdge;')
+          .replace('#include <uv_vertex>', '#include <uv_vertex>\nvMistEdge = uv;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec2 vMistEdge;')
+          .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+            vec2 ef = smoothstep(0.0, 0.18, vMistEdge) * smoothstep(1.0, 0.82, vMistEdge);
+            diffuseColor.a *= ef.x * ef.y;`);
+      };
+      mat.customProgramCacheKey = () => 'otr-mist';
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
       m.rotation.x = -Math.PI / 2;
       m.position.set(cx, y + i * (opts.gap || 0.35), cz);
@@ -783,6 +800,63 @@
     world.addUpdater((dt) => {
       for (const rec of mats) { rec.map.offset.x += rec.sx * dt; rec.map.offset.y += rec.sz * dt; }
     });
+  };
+
+  // ---------- soft volumetric light shaft ----------
+  // A tapered open cylinder shaded as a light beam: alpha fades at the
+  // silhouette (view-dependent), along the length (bright at the source),
+  // and breathes with a scrolling noise so it reads as dust in a beam
+  // rather than a plastic cone. Additive, non-fogged, layer 1 (ignored by
+  // the SSAO prepass). `dir` (optional) tilts the beam: unit vector the
+  // light travels along; default straight down.
+  P.lightShaft = function (world, x, y, z, opts = {}) {
+    const h = opts.height || 10, rTop = opts.radiusTop != null ? opts.radiusTop : 0.6;
+    const rBot = opts.radiusBottom != null ? opts.radiusBottom : rTop * 2.2;
+    const geo = new THREE.CylinderGeometry(rTop, rBot, h, 24, 1, true);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new THREE.Color(opts.color != null ? opts.color : 0xaec2ec) },
+        uOpacity: { value: opts.opacity != null ? opts.opacity : 0.12 },
+        uTime: { value: 0 },
+        uSeed: { value: Math.random() * 10 },
+      },
+      vertexShader: `
+        varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vN = normalize(mat3(modelMatrix) * normal);
+          vV = normalize(cameraPosition - wp.xyz);
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform float uOpacity; uniform float uTime; uniform float uSeed;
+        varying vec3 vN; varying vec3 vV; varying vec2 vUv;
+        float hash(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
+        float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
+        void main() {
+          float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.1); // silhouette fade
+          float len = smoothstep(0.0, 0.35, vUv.y) * (0.35 + 0.65 * smoothstep(0.55, 1.0, vUv.y)); // bright at source (v=1)
+          float n = vnoise(vec2(vUv.x * 6.0 + uSeed, vUv.y * 3.0 - uTime * 0.08 + uSeed));
+          n = 0.7 + 0.6 * n;
+          gl_FragColor = vec4(uColor * uOpacity * edge * len * n, 1.0);
+        }`,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (opts.dir) {
+      const d = opts.dir.clone().normalize();
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), d);
+    }
+    m.layers.set(1);
+    m.renderOrder = 3;
+    m.castShadow = m.receiveShadow = false;
+    world.add(m);
+    world.addUpdater((dt, e) => { mat.uniforms.uTime.value = e; });
+    world.disposables.push(() => mat.dispose());
+    return m;
   };
 
   // ---------- torch bracket (wall-mounted, non-colliding) ----------

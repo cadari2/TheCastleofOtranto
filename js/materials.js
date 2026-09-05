@@ -594,6 +594,11 @@
   // One call for exterior chapters: build sky, set as visible background,
   // and light the scene with it.
   M.sky = function (world, opts = {}) {
+    // GPU dome (sky.js) when available: animated cumulus, baked environment.
+    if (OTR.sky && OTR.sky.create && opts.painted !== true) {
+      try { return OTR.sky.create(world, opts); }
+      catch (e) { console.warn('GPU sky failed, using painted sky:', e); }
+    }
     const tex = M.makeSkyTexture(opts);
     tex.userData.shared = true; // disposed via world.disposables below
     if (opts.background !== false) {
