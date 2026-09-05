@@ -68,6 +68,7 @@
         ]
       });
       world.setFog(0x06070b, 2, 22);
+      if (OTR.atmo) OTR.atmo.set({ noise: 0.5, noiseScale: 0.1 }); // the dark breathes
       world.hardFloor = true;
       OTR.game.renderer.toneMappingExposure = 1.0;
       if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xe8f0ff, saturation: 0.88 });

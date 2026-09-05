@@ -92,7 +92,8 @@
       // 4096 where the GPU comfortably allows it — the texel density is what
       // keeps crenellation and figure shadows from dissolving into blobs.
       const maxTex = this.renderer.capabilities.maxTextureSize || 4096;
-      const mapSize = opts.mapSize || (maxTex >= 8192 ? 4096 : 2048);
+      const want = (OTR.quality && OTR.quality.shadowMapSize) || 4096;
+      const mapSize = opts.mapSize || Math.min(want, maxTex >= 8192 ? 4096 : 2048);
       sun.shadow.mapSize.set(mapSize, mapSize);
       const s = opts.area || 60; // fit the frustum to the playable area
       sun.shadow.camera.left = -s; sun.shadow.camera.right = s;

@@ -122,6 +122,7 @@
     G.adapt = null;
     OTR.game.renderer.toneMappingExposure = 1.05;
     if (G.postfx) G.postfx.resetGrade();
+    if (OTR.atmo) OTR.atmo.reset();
 
     await OTR.ui.fadeOut(600);
 
@@ -302,6 +303,8 @@
     let dt = (now - last) / 1000; last = now;
     dt = Math.min(dt, 0.05);
 
+    if (OTR.atmo && !G.paused) OTR.atmo.tick(dt);
+    if (OTR.quality) OTR.quality.tick(dt, G.running && !G.paused && !G.transitioning);
     if (G.adapt && !G.paused) {
       const a = G.adapt; a.t += dt;
       const k = OTR.smoothstep(0, 1, a.t / a.dur);
@@ -381,6 +384,7 @@
 
   function boot() {
     initRenderer();
+    if (OTR.quality) OTR.quality.init(G);
     OTR.materials.init(G.renderer);
     initGrain();
     OTR.ui.init();

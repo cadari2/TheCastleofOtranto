@@ -5,7 +5,7 @@
 'use strict';
 (function (OTR) {
 
-  const M = OTR.materials = { lib: {}, anisotropy: 1, texturesOk: true };
+  const M = OTR.materials = { lib: {}, anisotropy: 1, texturesOk: true, textures: [] };
   const loader = new THREE.TextureLoader();
 
   function canvasTex(size, draw, repeat) {
@@ -71,6 +71,7 @@
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     if (srgb) t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = M.anisotropy;
+    M.textures.push(t);
     return t;
   }
 
@@ -148,6 +149,7 @@
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.repeat.set(repeat, repeat);
     tex.anisotropy = M.anisotropy;
+    M.textures.push(tex);
     drawBlocks(null); // immediate fallback content
 
     const img = new Image();
@@ -258,8 +260,20 @@
     return mat;
   };
 
+  // Anisotropic filtering level for every surface texture; the quality
+  // presets retune it live (re-upload is a one-off cost per texture).
+  M.setAnisotropy = function (n) {
+    const r = M.renderer; if (!r) return;
+    const v = Math.max(1, Math.min(n, r.capabilities.getMaxAnisotropy()));
+    if (v === M.anisotropy) return;
+    M.anisotropy = v;
+    M.textures.forEach(t => { t.anisotropy = v; t.needsUpdate = true; });
+  };
+
   M.init = function (renderer) {
-    M.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    M.renderer = renderer;
+    const want = (OTR.quality && OTR.quality.anisotropy) || 8;
+    M.anisotropy = Math.min(want, renderer.capabilities.getMaxAnisotropy());
     const lib = M.lib;
 
     lib.stoneWall   = stoneBlockMaterial({ repeat: 3 });
@@ -369,6 +383,7 @@
       const t = new THREE.CanvasTexture(c);
       t.colorSpace = THREE.SRGBColorSpace;
       t.anisotropy = M.anisotropy;
+      M.textures.push(t);
       return t;
     })();
     // foliage billboard: painterly leaf cluster with alpha
@@ -432,6 +447,109 @@
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.repeat.set(1 / frames, 1);
     return t;
+  };
+
+  // ---------------------------------------------------------------------
+  // Water. A tileable normal map from a sum of directional sines (integer
+  // wave counts, so it wraps), sampled three times at different scales and
+  // drift speeds in the fragment shader so the surface rolls rather than
+  // slides. Foam whitens a band along the shore where a slow noise breaks.
+  // ---------------------------------------------------------------------
+  M.waterNormalTex = function (size = 256) {
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    const waves = [];
+    const rnd = OTR.rng(19);
+    for (let i = 0; i < 18; i++) {
+      const a = rnd() * Math.PI * 2, k = 2 + Math.pow(rnd(), 1.4) * 14;
+      const kx = Math.round(Math.cos(a) * k), ky = Math.round(Math.sin(a) * k);
+      if (!kx && !ky) continue;
+      waves.push({ kx, ky, amp: 0.55 / (1 + Math.hypot(kx, ky) * 0.3), ph: rnd() * 6.28, sharp: 0.5 + rnd() });
+    }
+    // a tileable value-noise octave breaks the sines' regularity into chop
+    const cells = 16, grid = [];
+    for (let i = 0; i < cells * cells; i++) grid.push(rnd());
+    const noise = (x, y) => {
+      const gx = ((x / size) * cells + cells) % cells, gy = ((y / size) * cells + cells) % cells;
+      const ix = Math.floor(gx), iy = Math.floor(gy), fx = gx - ix, fy = gy - iy;
+      const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      const g = (a, b) => grid[((a % cells) + cells) % cells + (((b % cells) + cells) % cells) * cells];
+      return (g(ix, iy) * (1 - sx) + g(ix + 1, iy) * sx) * (1 - sy) + (g(ix, iy + 1) * (1 - sx) + g(ix + 1, iy + 1) * sx) * sy;
+    };
+    const h = (x, y) => {
+      let v = 0;
+      for (const w of waves) {
+        const s = Math.sin((w.kx * x + w.ky * y) * Math.PI * 2 / size + w.ph);
+        v += w.amp * Math.sign(s) * Math.pow(Math.abs(s), w.sharp); // crests sharper than troughs
+      }
+      return v + (noise(x, y) - 0.5) * 1.1;
+    };
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const dx = h(x + 1, y) - h(x - 1, y), dy = h(x, y + 1) - h(x, y - 1);
+      const nx = -dx * 2.2, ny = -dy * 2.2, nz = 1;
+      const l = Math.hypot(nx, ny, nz);
+      const i = (y * size + x) * 4;
+      img.data[i] = (nx / l * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz / l * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = M.anisotropy;
+    return t;
+  };
+
+  // opts: color, shoreZ (foam band centre, world z), foamWidth
+  M.water = function (world, opts = {}) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: opts.color != null ? opts.color : 0x0e1a2c, roughness: 0.26, metalness: 0.55,
+      transparent: true, opacity: 0.94
+    });
+    mat.normalMap = M.waterNormalTex();
+    mat.normalScale = new THREE.Vector2(0.55, 0.55);
+    const uTime = { value: 0 };
+    const uShore = { value: new THREE.Vector2(opts.shoreZ != null ? opts.shoreZ : 0, opts.foamWidth || 8) };
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSeaTime = uTime;
+      shader.uniforms.uSeaShore = uShore;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vOtrSea;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvOtrSea = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+          varying vec3 vOtrSea; uniform float uSeaTime; uniform vec2 uSeaShore;
+          float otrSeaHash(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
+          float otrSeaNoise(vec2 p) {
+            vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(otrSeaHash(i), otrSeaHash(i + vec2(1, 0)), f.x), mix(otrSeaHash(i + vec2(0, 1)), otrSeaHash(i + vec2(1, 1)), f.x), f.y);
+          }
+          float otrFoam = 0.0;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+          {
+            float band = 1.0 - smoothstep(0.0, uSeaShore.y, vOtrSea.z - uSeaShore.x + 2.0);
+            float n = otrSeaNoise(vec2(vOtrSea.x * 0.18 + uSeaTime * 0.12, vOtrSea.z * 0.9 - uSeaTime * 0.5)) * 0.55
+                    + otrSeaNoise(vec2(vOtrSea.x * 0.7 - uSeaTime * 0.3, vOtrSea.z * 2.2 + uSeaTime * 0.4)) * 0.45;
+            otrFoam = band * smoothstep(0.5, 0.8, n + band * 0.2) * 0.75;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.48, 0.55), otrFoam);
+          }`)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.9, otrFoam);')
+        .replace('#include <normal_fragment_maps>', `
+          #ifdef USE_NORMALMAP_TANGENTSPACE
+            vec2 sxz = vOtrSea.xz;
+            vec3 n1 = texture2D(normalMap, sxz * 0.09 + uSeaTime * vec2(0.020, 0.011)).xyz * 2.0 - 1.0;
+            vec3 n2 = texture2D(normalMap, sxz * 0.23 - uSeaTime * vec2(0.013, 0.019)).xyz * 2.0 - 1.0;
+            vec3 n3 = texture2D(normalMap, sxz * 0.035 + uSeaTime * vec2(0.005, -0.004)).xyz * 2.0 - 1.0;
+            vec3 mapN = vec3((n1.xy + n2.xy * 0.55 + n3.xy * 0.9) * normalScale * (1.0 - otrFoam * 0.6), 1.0);
+            normal = normalize(tbn * normalize(mapN));
+          #endif`);
+    };
+    mat.customProgramCacheKey = () => 'otr-water';
+    world.addUpdater((dt, e) => { uTime.value = e; });
+    world.disposables.push(() => { mat.normalMap.dispose(); mat.dispose(); });
+    return mat;
   };
 
   // Cheap environment map (equirectangular gradient) so metals/roughs have

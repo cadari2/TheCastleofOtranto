@@ -36,6 +36,11 @@
         OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
         OTR.game.postfx.setGodrays(moonDir, { strength: 0.24, color: 0xb9c9ec });
       }
+      // the mist lies in the low ground and thins toward the canopy; it
+      // glows where the moon stands behind it and drifts in slow banks
+      if (OTR.atmo) {
+        OTR.atmo.set({ sunDir: moonDir, sunColor: 0xa4b6de, sunAmount: 0.8, sunPower: 5, heightBase: 0.5, heightFalloff: 0.18, heightMix: 0.7, noise: 0.6, noiseScale: 0.04 });
+      }
       document.getElementById('vignette').style.opacity = 0.8;
 
       // ---- terrain: forest floor sloping down to a beach (+Z = seaward) ----
@@ -59,8 +64,9 @@
       OTR.player.eyeHeight = 1.68;
 
       // ---- the sea ----
-      // slightly rough so the moon breaks into a broad glitter, not a mirror
-      const seaMat = new THREE.MeshStandardMaterial({ color: 0x0e1a2c, roughness: 0.32, metalness: 0.55, transparent: true, opacity: 0.92 });
+      // rolling ripple normals break the moon into a field of glitter and
+      // a slow foam line breathes along the shore (materials.water)
+      const seaMat = OTR.materials.water(world, { color: 0x0e1a2c, shoreZ: shoreZ, foamWidth: 9 });
       const sea = P().mesh(new THREE.PlaneGeometry(400, 200, 40, 20), seaMat, 0, seaY, shoreZ + 96, { cast: false, receive: false });
       sea.rotation.x = -Math.PI / 2; world.add(sea);
       const seaBase = sea.geometry.attributes.position.array.slice();

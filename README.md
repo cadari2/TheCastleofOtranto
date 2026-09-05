@@ -1,4 +1,4 @@
-v 0.3
+v 0.4
 # The Castle of Otranto — a playable 3D Gothic tale
 
 A browser-playable, first-person 3D adaptation of Horace Walpole's *The Castle
@@ -66,6 +66,7 @@ a chapter-select appears on the title screen for anything you've reached.
 | Interact / advance dialogue | **E** (or click, or **Space**) |
 | Duel / prompts | **Space** |
 | Pause / release mouse | **Esc** |
+| Graphics quality | **Graphics** button on the title and pause screens (Auto · Low · Medium · High · Ultra 4K) |
 
 Headphones are recommended — all sound (wind, sea, bells, thunder, the sword,
 the score) is generated procedurally in the browser; there are no audio files.
@@ -135,6 +136,16 @@ That's it. There is nothing to install on the server and no server-side code.
   slowly boil, a sun or moon with a scattering halo, twinkling stars, horizon
   haze. The same shader is baked once per chapter into an equirectangular
   environment map so the lighting on stone and steel matches the sky overhead.
+- The air is lit (`js/atmo.js`): the fog every material receives lies low and
+  thins with height, glows toward the sun or moon, and drifts in slow banks.
+- The image goes through a small post pipeline (`js/postfx.js`): MSAA render,
+  ambient occlusion, two bloom tiers, screen-space light shafts, a whisper of
+  lens aberration, filmic tone mapping and a per-chapter grade.
+- **Graphics presets** (`js/quality.js`): Auto by default, which watches real
+  frame times and settles on Low / Medium / High / Ultra. *Ultra 4K* renders at
+  least 2× the display's pixels (a 3840×2160 internal image on a 1080p screen,
+  native on a 4K or Retina display), full-resolution ambient occlusion, 4096
+  shadow maps and 16× anisotropic filtering. The choice is remembered.
 - Architecture (arches, vaults, towers, crenellations, the giant helmet, sword,
   tomb, and the apparition) is built procedurally in code — no external 3D model
   files — and lit with physically-based materials, real-time shadows, fog, and a

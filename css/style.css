@@ -90,6 +90,7 @@ body { font-family: Georgia, 'Times New Roman', serif; color: #d8cfc0; }
 .menu-btn:hover { color: #f4ead2; border-color: #c9b98f; background: rgba(120,95,50,.12);
   box-shadow: 0 0 24px rgba(150,120,60,.18); }
 .menu-btn:disabled { opacity: .35; cursor: default; }
+.menu-btn.small { font-size: 13.5px; letter-spacing: .16em; padding: 8px 26px; color: #a89c80; border-color: rgba(160,140,100,.25); }
 .hint { color: #6f6650; font-size: 13.5px; line-height: 1.7; letter-spacing: .05em; }
 #loading { margin-top: 18px; font-style: italic; color: #857a5f; font-size: 15px; }
 #chapter-select { display: flex; flex-direction: column; gap: 8px; }

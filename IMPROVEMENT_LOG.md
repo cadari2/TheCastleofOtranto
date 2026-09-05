@@ -261,3 +261,115 @@ errors.
   searchers; making her hide with you (kneel when you crouch) would sell it.
 - The duel could vary the round order per attempt.
 - Tune on real hardware: detection rates were set against simulated time.
+
+---
+
+## Session 4 — 2026-09-05 — the air, the water, and a 4K mode (v0.4)
+
+Request: "AAA 4K graphics". Everything here is still plain static files;
+no build step, no new assets. The pass went after the three things that
+separate a lit scene from a *cinematic* one — the air between the camera
+and the walls, the quality of the highlights, and pixel density — plus the
+one surface that was still flat-shaded: the sea.
+
+### What changed
+
+**Atmosphere (`js/atmo.js`, new).** three.js fog is a flat blend toward one
+colour by distance. The shared fog shader chunks are now rewritten once at
+load, so *every* built-in material (stone, ground, figures, sprites, mist
+sheets, grass) gets:
+
+- height fog — an exponential density profile integrated analytically along
+  the camera→fragment ray. The forest mist lies in the low ground and thins
+  toward the canopy (base 0.5 m, falloff 0.18, 70 %); the courtyard haze
+  thins up the walls so the battlements read crisper than the paving;
+- inscatter — the fog colour brightens toward the sun/moon with a tunable
+  lobe (courtyard: warm, power 7; wood: moon-blue, power 5; tower: power 9),
+  so the far haze glows where the light stands behind it;
+- drifting density — a 2-octave value noise over world XZ, scrolled slowly,
+  so the far fog breathes in banks (strongest in the wood and the vaults).
+
+Uniforms are shared objects injected through `Material.prototype.onBuild`,
+which the renderer calls for every program it compiles, so one set of values
+drives every material including the ones with their own `onBeforeCompile`.
+Chapters call `OTR.atmo.set({...})`; `startChapter` resets it. Nothing in
+the chapters' existing `setFog` calls changed.
+
+**Post pipeline (`js/postfx.js`).** A second, quarter-res bloom tier (the
+bright pass resampled down and blurred there) adds the broad soft veil
+around torches and the sun that the tight half-res glow could not give; a
+faint radial chromatic aberration in the composite (0.0025, growing toward
+the frame edge) takes the "computer-clean" edge off highlights. New
+`setQuality()` exposes the AO resolution scale and sample count (compiled
+in as `AO_SAMPLES`), the wide tier, and the aberration amount.
+
+**Graphics presets (`js/quality.js`, new).** Low / Medium / High / Ultra
+4K, and Auto (default). Ultra renders at ≥2× the display's pixels — a
+3840×2160 internal image on a 1080p screen, native on a 4K/Retina display —
+with full-resolution AO ×16 samples, 4096 shadow maps, 16× anisotropy and
+the wide bloom. Low is 1×, 1024 shadows, half-res AO ×7, no wide tier, no
+aberration. Auto starts at High and watches real in-world frame times in 3 s
+windows: over 26 ms steps down, under 9 ms steps up, with a cooldown and a
+lock after any down-step that follows an up-step, so it cannot seesaw.
+Everything applies live — pixel ratio, post targets, directional shadow
+maps (disposed and rebuilt at the new size), texture anisotropy — and the
+choice persists. A **Graphics** button on the title and pause screens cycles
+it; the version tag and README list it.
+
+**Water (`materials.water`).** The sea was a flat dark plane with a CPU
+swell. It now carries a tileable normal map (sum of nine directional sines,
+integer wave counts so it wraps) sampled three times at different scales
+and drift speeds so the surface rolls rather than slides; the moon and the
+baked sky break into a field of glitter across it. A foam line breathes
+along the shore (a slow noise inside a band from the water's edge), whiter
+and rougher where it breaks.
+
+Anisotropic filtering went from 8× to the preset's value (16× on High and
+Ultra) for every surface texture, including the drawn ashlar walls.
+
+### Verified
+
+Headless SwiftShader captures of every chapter (scratchpad `v4/`): the
+wood shows the mist lying low with the canopy clear above it and the far
+fog in banks; the courtyard and tower are unchanged in tone with the sky
+and battlements intact; the tower gallery, vaults and tomb resume without
+daylight inscatter leaking in. A new functional suite (`gfxtest.js`, 13
+checks) passes: Auto/High default at 1× on a 1× display; Ultra doubles the
+drawing buffer (1280×720 from a 640×360 window) with full-res AO ×16 and
+persists; Low drops to half-res AO ×7, 1024 shadows and no wide tier;
+cycling order; the chapter-1 shadow map follows the preset and is resized
+and rebuilt live mid-chapter; the fog chunk is compiled into 13 of 23
+programs and the inscatter amount is read back from every fogged GPU
+program; the water program links with its ripple map, the fog drift time
+advances, and Chapter II resumes with inscatter and height fog reset. The
+v0.3 gameplay suite (16 checks) still passes once its duel step stretches
+the parry windows for the harness — the windows are wall-clock and the
+evidence screenshot now outlasts them under SwiftShader; a direct trace of
+the duel shows all eight parries land and the chapter advances. An Ultra
+run on a 1920×1080 window at 2× DPR produced a 3840×2160 scene buffer with
+3840×2160 AO ×16 and 16× anisotropy, no GL error (`v4/ch1-ultra4k.png`).
+
+Cost, SwiftShader ms/frame at 1280×720, High preset, same machine, run
+sequentially against the previous commit: courtyard 2344 → 2824 (+20 %),
+wood 4278 → 5450 (+27 %). Most of that is the 16× anisotropy and the extra
+bloom tier, both of which are near-free on a real GPU; Auto steps down if
+they are not.
+
+### Tried and rejected
+
+- Screen-space depth fog in the post pass (would double-fog against the
+  material fog and miss the sprites) — patching the shared fog chunk gives
+  every material the same air for one code path.
+- 8192 shadow maps for Ultra — 256 MB of depth for a barely visible gain
+  at this geometry scale.
+- Vignette and film grain inside the composite — the CSS overlays already
+  do this at zero GPU cost; moving them would only add uniforms.
+
+### Open for next time
+
+- Real-hardware tuning of the Auto thresholds (26 ms / 9 ms) and of the
+  inscatter strengths; SwiftShader cannot say what a laptop GPU will do.
+- The water still has no refraction or depth tint at the shore; foam is a
+  band, not wave-driven.
+- Temporal anti-aliasing would let Ultra drop MSAA at 4K.
+- A sharpening pass for Medium/Low, where the image is below native.

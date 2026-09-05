@@ -40,6 +40,9 @@
         OTR.game.postfx.setGrade({ tint: 0xecf1ff, saturation: 0.92 });
         OTR.game.postfx.setGodrays(moonDir, { strength: 0.2, color: 0xbdcdf5 });
       }
+      if (OTR.atmo) {
+        OTR.atmo.set({ sunDir: moonDir, sunColor: 0xb9c8ee, sunAmount: 0.55, sunPower: 9, noise: 0.3, noiseScale: 0.03 });
+      }
       document.getElementById('vignette').style.opacity = 0.78;
 
       world.hardFloor = true;
