@@ -487,3 +487,102 @@ quantisation the curve was amplifying.
   let Manfred draw his sword.
 - The well's cap is a flat disc; a sky-dome sample through it would tie it
   to the chapter's moon.
+
+---
+
+## Session 6 — 2026-09-10 — cloister dressing, NPC movement (v0.6)
+
+### Brief
+
+"Continue adding depth: details in the corridors (cloisters), more
+realistic movement from the NPCs." Brainstormed and ranked by depth per
+line of code; the top tier is implemented below, the rest listed under
+*Open*.
+
+### NPC movement — `js/figures.js`, `js/stealth.js`, `js/ch2.js`, `js/audio.js`
+
+- **Eased turning.** `faceTo` now sets a target heading; the body turns at
+  2.6 rad/s (faster while walking) instead of snapping. A figure placed at
+  build time snaps once before its first frame, so nothing starts facing
+  the wrong way. `faceTo(x, z, true)` forces a snap.
+- **Head joint.** The head looks at the player when within 7 m and roughly
+  in front (yaw and pitch, eased), scans left and right while the figure
+  stands, and takes an explicit target from `lookAt(x, z)` — clamped to
+  what a neck can do — or `lookAt(null)` to release.
+- **Alert stance.** `userData.alert` leans the torso in and thrusts the
+  torch arm forward; the searchers set it while suspicious, and look at
+  the spot the player was last seen.
+- **Patrol easing.** Searchers accelerate out of a pause and slow into a
+  waypoint; the pause "look about" turns the body a little each way while
+  the head scans on its own (it used to spin the whole figure ±0.7 rad in a
+  sine). `walkTo` accelerates over the first stride and slows into the
+  last metre.
+- **Footsteps.** Each half-stride of a walking figure within 14 m plays a
+  footstep at a volume that falls with distance and gets duller the
+  further off it is (`audio.footstep(hard, vol)`). You hear the captain
+  before you see his torch.
+- **Isabella's follow.** Eased speed (hurries when you draw ahead, slows
+  as she closes), turns to face you when she stops, and every 6–13 s
+  glances back over her right shoulder into the dark behind.
+
+### Cloister dressing — `js/props.js`, `js/ch2.js`
+
+- **`P.ossuary`** — a niche sunk into a wall, arched lintel, rows of skulls
+  (cranium, sockets, nasal hollow, jaw; jumbled rotations) with long bones
+  between the rows and a small warm fill so they read from the passage.
+  Walls are solid boxes, so the niche punches through the same way the
+  light-well does: interior at render order −3, a depth-only mask over the
+  opening at −2. Four in Chapter II.
+- **`P.effigyTomb`** — a chest tomb (arcaded sides, lid, plinth, a lion at
+  the feet) with a stone knight lying on it, hands folded on the breast:
+  `figures.make` with `static: true`, re-parented into a cradle rotated
+  −90° about X. The elbow Euler order is XYZ, so the fold is a Z rotation;
+  an X rotation stands the forearms up like a sleeper's. Collider is
+  computed in world space from the tomb's angle.
+- **`P.puddle`** — an irregular glossy disc on the paving with a soft wet
+  halo (radial-gradient texture — a flat dark disc read as a paint spill),
+  low env intensity so it catches torchlight without mirroring the
+  environment's highlight as a white patch. `opts.drip` releases a drop
+  from the vault that falls under gravity, strikes with an expanding ring
+  and plays the chapter's drip when within 12 m. Five in Chapter II, four
+  fed by drips.
+- **`P.cobweb`** — a fan of spokes and sagging spirals drawn once to a
+  512² canvas (no mipmaps, or the threads vanish at range), hung across
+  an upper corner with the hub at the top and set out along the corner's
+  diagonal so it spans wall to wall; its free edge stirs. Seven placed.
+- **`P.chain`** — iron links with a hook, hanging from the vaulting and
+  swaying. Five placed.
+- **`P.rats`** — small dark bodies idling at the skirting; when you come
+  within 4.5 m one bolts along its wall to its hole and vanishes, creeping
+  back later. Five placed.
+
+### A structural bug found on the way
+
+`P.barrelVault` built the upper half of a cylinder and then flipped it 180°
+("dome upward"), which hung it as a **trough** — the corridor "ceiling"
+sagged to 2.1 m in mid-passage and rose to 4.6 m at the walls (confirmed
+by an upward raycast: hit at 2.10 m at x = 0, 2.60 m at x = −1.5). Every
+barrel-vaulted corridor in Chapter II has been like this. The flip is
+removed; the vaults now spring from the wall tops and rise 2.5 m above
+them. That is also why the first chains went missing — they hung above
+the trough.
+
+### Verified
+
+Headless SwiftShader captures (scratchpad `dress*/`, `vault/`): the niche
+with skulls through the wall; the effigy folded on its tomb; the puddle
+with halo beside the passing captain; a cobweb fanned across the start
+hall's corner; the chain in the cloister hall and, after the vault fix,
+another hanging from corridor A's vault; Isabella walking ahead in
+corridor D. Chapters I–V load with zero console errors.
+
+### Open for next time
+
+- NPC collision avoidance against columns and each other (searchers walk
+  straight lines between waypoints; the routes are laid out to be clear).
+- Ambient conversation between the two searchers when their patrols pass
+  within earshot.
+- Latin inscriptions on the tomb and above the niches (a canvas text
+  texture on a plane).
+- A junction gap shows as a black void above the cross corridor's west
+  end when looking up from inside it (pre-existing).

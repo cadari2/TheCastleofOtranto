@@ -22,9 +22,19 @@
    Faces are shadowed or averted (hood, helm): right for 1764 Gothic, and
    it sidesteps the uncanny valley of procedural realistic faces.
 
-   API per figure (a Group): faceTo(x,z), facePlayer(), walkTo(x,z,speed),
-   setCollider(r), moveCollider(), removeCollider(); userData.rarm/larm
-   are the elbow groups (ch4 swings the knight's sword arm with them). */
+   Turning is eased: faceTo() sets a target yaw and the body turns at a
+   human rate (a snap before the first frame, so figures placed at build
+   time start facing the right way). The head is on its own joint and
+   looks at the player when close and roughly in front, or at a point set
+   with lookAt(x,z); it scans left and right when the figure pauses. An
+   alert stance (userData.alert) leans the torso in and thrusts the torch
+   forward. Footsteps are heard, attenuated by distance.
+
+   API per figure (a Group): faceTo(x,z[,snap]), facePlayer(), lookAt(x,z)
+   / lookAt(null), walkTo(x,z,speed), setCollider(r), moveCollider(),
+   removeCollider(); userData.rarm/larm are the elbow groups (ch4 swings
+   the knight's sword arm with them). opts.static disables animation (an
+   effigy, a suit of armour). */
 'use strict';
 (function (OTR) {
 
@@ -258,8 +268,17 @@
 
     // ---- API ----
     g.userData.figure = true;
-    g.faceTo = (tx, tz) => { g.rotation.y = Math.atan2(tx - g.position.x, tz - g.position.z); };
+    // ---- facing: eased yaw ----
+    let targetYaw = g.rotation.y, ticked = false;
+    g.faceTo = (tx, tz, snap) => {
+      targetYaw = Math.atan2(tx - g.position.x, tz - g.position.z);
+      if (snap || !ticked || opts.static) g.rotation.y = targetYaw;
+    };
     g.facePlayer = () => g.faceTo(OTR.player.pos.x, OTR.player.pos.z);
+    // head look target (world x,z) or null for automatic
+    let lookT = null;
+    g.lookAt = (tx, tz) => { lookT = (tx == null) ? null : [tx, tz]; };
+    g.userData.alert = false;
     g.setCollider = (r = 0.4) => { g.userData.col = world.cyl(g.position.x, g.position.z, r, groundY, groundY + H); return g; };
     g.removeCollider = () => { if (g.userData.col) { g.userData.col.r = 0.01; g.userData.col.x = 99999; } };
     g.moveCollider = () => { if (g.userData.col) { g.userData.col.x = g.position.x; g.userData.col.z = g.position.z; } };
@@ -267,10 +286,18 @@
     // ---- animation: idle sway + velocity-driven stride ----
     const swaySeed = Math.random() * 10;
     const last = new THREE.Vector3().copy(g.position);
-    let phase = Math.random() * 6.28, gait = 0;
+    let phase = Math.random() * 6.28, gait = 0, lastStep = 0, alertK = 0, scanT = 0;
+    let headYaw = 0, headPitch = 0, restT = 0;
     const tmp = new THREE.Vector3();
+    if (opts.static) { g.userData.static = true; }
     world.addUpdater((dt, e) => {
-      if (dt <= 0) return;
+      if (dt <= 0 || opts.static) return;
+      ticked = true;
+      // turn toward the target heading at a human rate (faster when walking)
+      let dy = targetYaw - g.rotation.y;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      const turnRate = 2.6 + gait * 3.0;
+      g.rotation.y += OTR.clamp(dy, -turnRate * dt, turnRate * dt);
       const dx = g.position.x - last.x, dz = g.position.z - last.z;
       last.copy(g.position);
       const speed = Math.hypot(dx, dz) / dt;
@@ -278,6 +305,40 @@
       gait += ((moving ? Math.min(1, speed / 1.2) : 0) - gait) * Math.min(1, dt * 8);
       if (moving) phase += dt * Math.min(speed, 2.2) * 3.4;
       const s = Math.sin(phase), c = Math.cos(phase);
+      // footsteps: one per half stride, heard within ~14 m
+      if (gait > 0.3) {
+        const step = Math.floor(phase / Math.PI);
+        if (step !== lastStep) {
+          lastStep = step;
+          const d = OTR.dist2D(g.position.x, g.position.z, OTR.player.pos.x, OTR.player.pos.z);
+          if (d < 14 && OTR.audio.footstep) OTR.audio.footstep(true, OTR.clamp(1 - d / 14, 0, 1) * 0.55);
+        }
+      }
+      // ---- head: look at the player when close and in front, else scan while paused ----
+      restT = moving ? 0 : restT + dt;
+      let wantYaw = 0, wantPitch = 0;
+      const p = OTR.player;
+      const lt = lookT || ((OTR.dist2D(g.position.x, g.position.z, p.pos.x, p.pos.z) < 7) ? [p.pos.x, p.pos.z] : null);
+      if (lt) {
+        const ay = Math.atan2(lt[0] - g.position.x, lt[1] - g.position.z) - g.rotation.y;
+        const rel = Math.atan2(Math.sin(ay), Math.cos(ay));
+        if (lookT) wantYaw = OTR.clamp(rel, -1.4, 1.4); // an explicit glance turns as far as a neck can
+        else if (Math.abs(rel) < 1.35) {
+          wantYaw = rel;
+          const d = OTR.dist2D(g.position.x, g.position.z, p.pos.x, p.pos.z);
+          wantPitch = OTR.clamp((p.pos.y - (g.position.y + HEAD)) / Math.max(d, 0.5), -0.5, 0.35);
+        }
+      } else if (restT > 0.8) {
+        scanT += dt;
+        wantYaw = Math.sin(scanT * 0.9 + swaySeed) * 0.75;
+        wantPitch = Math.sin(scanT * 0.5) * 0.08 - 0.05;
+      }
+      const hk = Math.min(1, dt * 4.5);
+      headYaw += (wantYaw - headYaw) * hk; headPitch += (wantPitch - headPitch) * hk;
+      headG.rotation.set(-headPitch, headYaw, 0);
+      // ---- alert stance ----
+      alertK += ((g.userData.alert ? 1 : 0) - alertK) * Math.min(1, dt * 3);
+      if (opts.torch) { shR.rotation.x = -0.85 - 0.55 * alertK; shR.userData.elbow.rotation.x = -1.05 + 0.35 * alertK; }
       const swing = 0.6 * gait;
       legL.hip.rotation.x = s * swing;
       legR.hip.rotation.x = -s * swing;
@@ -290,6 +351,7 @@
       torso.position.y = bob + (1 - gait) * Math.sin(e * 1.3 + swaySeed) * 0.006;
       torso.rotation.z = (1 - gait) * Math.sin(e * 0.8 + swaySeed) * 0.02 + gait * s * 0.03;
       torso.rotation.y = gait * -s * 0.06;
+      torso.rotation.x = 0.14 * alertK + gait * 0.05; // lean in when alert, into the stride when walking
       if (!g.userData.walking && !moving) g.position.y = groundY;
       // the fire follows the raised hand
       if (torchRec) {
@@ -304,14 +366,16 @@
       return new Promise((resolve) => {
         g.userData.walking = true;
         g.faceTo(tx, tz);
-        let prev = performance.now();
+        let prev = performance.now(), v = 0;
         const step = () => {
           if (world.disposed) { g.userData.walking = false; resolve(); return; }
           const now = performance.now(), dt = Math.min(0.05, (now - prev) / 1000); prev = now;
           const dx = tx - g.position.x, dz = tz - g.position.z;
           const d = Math.hypot(dx, dz);
           if (d < 0.08) { g.userData.walking = false; resolve(); return; }
-          const s = Math.min(d, speed * dt);
+          // accelerate over the first stride, slow into the last metre
+          v = Math.min(speed, v + speed * 2.2 * dt, Math.max(0.35, d * 1.6));
+          const s = Math.min(d, v * dt);
           g.position.x += dx / d * s; g.position.z += dz / d * s;
           g.position.y = world.groundHeight(g.position.x, g.position.z);
           g.moveCollider();

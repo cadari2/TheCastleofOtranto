@@ -138,6 +138,41 @@
       P().rock(world, -3, -1, 0.5, 0, L().vaultStone);
       P().rock(world, 1.7, 8, 0.6, 0, L().vaultStone);   // leans on A's east wall
       P().rock(world, 12, 18.4, 0.5, 0, L().vaultStone); // leans on B's south wall
+      // ---- dressing: the things that make these passages a place ----
+      // ossuary niches sunk into the walls, skulls stacked to the lintel
+      P().ossuary(world, 9.5, 1.35, 17.8, -Math.PI / 2, { width: 1.3 });
+      P().ossuary(world, 16, 1.35, 22.2, Math.PI / 2, { width: 1.1, rows: 2 });
+      P().ossuary(world, 37.2, 1.35, 18, Math.PI, { width: 1.6, rows: 3 });
+      P().ossuary(world, 37.2, 1.35, 23, Math.PI, { width: 1.2, rows: 3 });
+      // a knight's chest tomb along the cloister hall's south wall
+      P().effigyTomb(world, 31, 15.4, Math.PI / 2);
+      // standing water where the vault weeps, and the drips that feed it
+      P().puddle(world, 0.8, 9, 0.8, { drip: { ceilY: 6.6, every: 3.5 } });
+      P().puddle(world, 8, 19.3, 1.1, { stretch: 0.7, drip: { ceilY: 4.6, every: 5 } });
+      P().puddle(world, 28, 22.6, 0.9, { drip: { ceilY: 5.0 } });
+      P().puddle(world, 30.2, 36, 0.7, { stretch: 1.4, drip: { ceilY: 6.6, every: 4.2 } });
+      P().puddle(world, 34.8, 47.5, 1.0);
+      // cobwebs hung across the upper corners
+      // (corner point, then the diagonal into the room as atan2(dx, dz))
+      P().cobweb(world, -4.2, 4.4, -7.7, Math.PI / 4, 1.2);
+      P().cobweb(world, 4.2, 4.4, -7.7, -Math.PI / 4, 0.9);
+      P().cobweb(world, -2.2, 4.55, 17.8, Math.PI / 4, 1.1);
+      P().cobweb(world, -2.2, 4.55, 22.2, 3 * Math.PI / 4, 0.8);
+      P().cobweb(world, 25.8, 4.4, 54.2, 3 * Math.PI / 4, 1.0);
+      P().cobweb(world, 36.2, 4.4, 54.2, -3 * Math.PI / 4, 1.2);
+      P().cobweb(world, 24.8, 4.95, 13.8, Math.PI / 4, 1.3);
+      // chains left hanging from the vaulting, stirring in the draught
+      P().chain(world, -1.5, 6.55, 12, 1.4);
+      P().chain(world, 1.6, 6.5, 6, 1.0);
+      P().chain(world, 27, 5.0, 19, 1.8);
+      P().chain(world, 35, 5.0, 24, 1.2);
+      P().chain(world, 29.6, 6.55, 33, 1.5);
+      // rats along the skirting; they bolt for their holes when you come near
+      P().rats(world, [
+        [4.2, 18.0, 6.0, 18.0], [16, 22.0, 19.1, 22.0], [36.8, 25, 37.1, 26.2],
+        [29.0, 30, 28.9, 26.8], [26.2, 46, 25.9, 44],
+      ]);
+
       // torches sit on walls (bracket + flame) instead of floating mid-passage
       P().wallTorch(world, 0, 2.3, 22.2, Math.PI / 2, { intensity: 1.6, distance: 9 });
       P().wallTorch(world, 24.8, 2.3, 24.3, 0, { intensity: 1.5, distance: 9 });
@@ -168,16 +203,33 @@
     }
   };
 
+  // Isabella keeps close: she eases into a hurried walk when you draw
+  // ahead, slows as she catches up, turns to face you when she stops, and
+  // every so often glances back over her shoulder into the dark.
   function followUpdater(world, isabella) {
-    world.addUpdater(() => {
+    let v = 0, glance = 0, glanceT = 4 + Math.random() * 4;
+    world.addUpdater((dt, e) => {
       if (!isabella.userData.follow) return;
       const p = OTR.player, d = OTR.dist2D(isabella.position.x, isabella.position.z, p.pos.x, p.pos.z);
-      if (d > 3) {
+      const want = d > 3 ? Math.min(1.9, (d - 2.6) * 1.5) : 0;
+      v += (want - v) * Math.min(1, dt * (want > v ? 3 : 6));
+      if (v > 0.02) {
         const dx = p.pos.x - isabella.position.x, dz = p.pos.z - isabella.position.z;
-        const s = Math.min(d - 2.6, 0.06);
+        const s = Math.min(Math.max(0, d - 2.4), v * dt);
         isabella.position.x += dx / d * s; isabella.position.z += dz / d * s;
         isabella.position.y = world.groundHeight(isabella.position.x, isabella.position.z);
-        isabella.faceTo(p.pos.x, p.pos.z);
+        isabella.moveCollider && isabella.moveCollider();
+      }
+      isabella.faceTo(p.pos.x, p.pos.z);
+      // the glance back: head turns to the corridor behind her for a moment
+      glanceT -= dt;
+      if (glanceT <= 0) { glance = 1.6; glanceT = 6 + Math.random() * 7; }
+      if (glance > 0) {
+        glance -= dt;
+        // over the right shoulder (a neck cannot turn fully round)
+        const a = isabella.rotation.y + 2.4;
+        isabella.lookAt(isabella.position.x + Math.sin(a) * 4, isabella.position.z + Math.cos(a) * 4);
+        if (glance <= 0) isabella.lookAt(null);
       }
     });
   }

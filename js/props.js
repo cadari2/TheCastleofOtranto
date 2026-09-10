@@ -234,7 +234,10 @@
     geo.rotateY(Math.PI / 2);
     const m = new THREE.Mesh(geo, material);
     m.position.set(x, springY, zc);
-    m.rotation.x = Math.PI; // dome upward
+    // The half-cylinder is built as the UPPER half (rotateZ puts the +x
+    // half at +y), springing from the wall tops and rising width/2 above
+    // them. It used to be flipped 180° here "dome upward", which actually
+    // hung it as a trough sagging to 2.1 m in mid-passage.
     m.receiveShadow = true; m.castShadow = true;
     material.side = THREE.DoubleSide;
     world.add(m);
@@ -1018,6 +1021,337 @@
     const sz = OTR.clamp(dist / 12, 0.5, 1.25);
     const fy = y + ty + 0.40 + 0.1 * sz;
     return world.torch(x + ux * tx, fy, z + uz * tx, Object.assign({ intensity: 2.4, distance: 11 }, opts));
+  };
+
+
+  // ======================================================================
+  // Cloister dressing: the small things that make a passage a place.
+  // ======================================================================
+
+  // ---------- cobweb: a web hung across an upper corner, stirring in drafts ----------
+  // (x, y, z) is the corner where two walls meet the ceiling; `ang` is the
+  // direction from that corner into the room (the diagonal between the
+  // walls). The web hangs as a fan with its hub at the top, spanning from
+  // one wall to the other a little way out from the corner.
+  P.cobweb = function (world, x, y, z, ang, size = 1.0, opts = {}) {
+    const lib_ = lib();
+    if (!lib_.cobwebTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.scale(2, 2);
+      const rnd = OTR.rng(41);
+      ctx.strokeStyle = 'rgba(230,225,215,0.95)';
+      ctx.lineWidth = 1.6;
+      // corner at (0,0): radial threads fanning into the quadrant, spirals between
+      const spokes = 11;
+      for (let i = 0; i <= spokes; i++) {
+        const a = (i / spokes) * Math.PI / 2 + (rnd() - 0.5) * 0.04;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 260, Math.sin(a) * 260); ctx.stroke();
+      }
+      ctx.lineWidth = 1.2;
+      for (let r = 22; r < 250; r += 14 + rnd() * 10) {
+        ctx.beginPath();
+        for (let i = 0; i <= spokes; i++) {
+          const a = (i / spokes) * Math.PI / 2;
+          const rr = r * (0.94 + rnd() * 0.08);
+          const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+          if (i === 0) ctx.moveTo(px, py);
+          else { // sag between spokes
+            const pa = ((i - 1) / spokes) * Math.PI / 2, mr = r * 0.9;
+            ctx.quadraticCurveTo(Math.cos((pa + a) / 2) * mr, Math.sin((pa + a) / 2) * mr, px, py);
+          }
+        }
+        ctx.globalAlpha = 0.55 + rnd() * 0.35;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // torn away patches
+      ctx.globalCompositeOperation = 'destination-out';
+      for (let i = 0; i < 5; i++) {
+        const px = rnd() * 256, py = rnd() * 256, r = 14 + rnd() * 30;
+        const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+        g.addColorStop(0, 'rgba(0,0,0,0.9)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.fillRect(px - r, py - r, r * 2, r * 2);
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; // threads must not mip away
+      lib_.cobwebTex = t;
+    }
+    const mat = new THREE.MeshStandardMaterial({
+      map: lib_.cobwebTex, transparent: true, opacity: opts.opacity != null ? opts.opacity : 0.7,
+      depthWrite: false, side: THREE.DoubleSide, roughness: 1, metalness: 0, color: 0xd8d2c4,
+      emissive: 0x1e1c18 // catches a little light even in a dark corner
+    });
+    // the texture's hub (0,0) is the quad's top-left; turn the quadrant so
+    // its spokes fan straight down and to both sides from the hub
+    const geo = new THREE.PlaneGeometry(size, size, 6, 6);
+    geo.translate(size / 2, -size / 2, 0);
+    geo.rotateZ(-Math.PI / 4);
+    const m = new THREE.Mesh(geo, mat);
+    // hub set out along the diagonal so the fan reaches both walls; the
+    // plane faces the diagonal (normal = +Z local → (sin ang, 0, cos ang))
+    const off = size * 0.5;
+    m.position.set(x + Math.sin(ang) * off, y - 0.02, z + Math.cos(ang) * off);
+    m.rotation.y = ang;
+    if (opts.tilt) m.rotation.x = opts.tilt;
+    m.castShadow = m.receiveShadow = false;
+    m.layers.set(1); m.renderOrder = 2;
+    world.add(m);
+    const base = geo.attributes.position.array.slice();
+    const seed = Math.random() * 10;
+    world.addUpdater((dt, e) => {
+      const arr = geo.attributes.position.array;
+      for (let i = 0; i < geo.attributes.position.count; i++) {
+        const bx = base[i * 3], by = base[i * 3 + 1];
+        const far = Math.hypot(bx, by) / size; // free edge stirs, the corner is anchored
+        arr[i * 3 + 2] = Math.sin(e * 1.1 + seed + bx * 3) * 0.03 * far * far;
+      }
+      geo.attributes.position.needsUpdate = true;
+    });
+    world.disposables.push(() => mat.dispose());
+    return m;
+  };
+
+  // ---------- puddle: a still sheet of water on the paving ----------
+  // A glossy dark disc that catches torch and moon reflections; optional
+  // drip (opts.drip) releases drops from the ceiling that strike it with
+  // an expanding ring and the chapter's drip sound.
+  P.puddle = function (world, x, z, r = 0.9, opts = {}) {
+    const y = (opts.y != null ? opts.y : world.groundHeight(x, z)) + 0.012;
+    const geo = new THREE.CircleGeometry(r, 28);
+    // irregular outline
+    const pos = geo.attributes.position;
+    const rnd = OTR.rng((x * 31 + z * 17) | 0 || 3);
+    for (let i = 1; i < pos.count; i++) {
+      const k = 0.78 + rnd() * 0.3;
+      pos.setX(i, pos.getX(i) * k); pos.setY(i, pos.getY(i) * k * (opts.stretch || 1));
+    }
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x0a0d12, roughness: 0.14, metalness: 0.0, transparent: true, opacity: 0.9,
+      envMapIntensity: 0.55, polygonOffset: true, polygonOffsetFactor: -1
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.rotation.x = -Math.PI / 2; m.position.set(x, y, z);
+    m.receiveShadow = true; m.castShadow = false;
+    world.add(m);
+    world.disposables.push(() => mat.dispose());
+    // wet halo on the stone around the puddle: a soft radial darkening
+    const lib_ = lib();
+    if (!lib_.wetTex) {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const ctx = c.getContext('2d');
+      const gr = ctx.createRadialGradient(64, 64, 20, 64, 64, 64);
+      gr.addColorStop(0, 'rgba(0,0,0,0.5)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.22)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gr; ctx.fillRect(0, 0, 128, 128);
+      lib_.wetTex = new THREE.CanvasTexture(c);
+    }
+    const halo = new THREE.Mesh(new THREE.PlaneGeometry(r * 3, r * 3 * (opts.stretch || 1)), new THREE.MeshBasicMaterial({
+      map: lib_.wetTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1
+    }));
+    halo.rotation.x = -Math.PI / 2; halo.position.set(x, y - 0.004, z);
+    halo.renderOrder = 1; world.add(halo);
+
+    if (opts.drip) {
+      const ceilY = opts.drip.ceilY || 4.4;
+      const drop = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), new THREE.MeshStandardMaterial({ color: 0xbfd0e8, roughness: 0.1, metalness: 0 }));
+      drop.scale.set(0.7, 1.6, 0.7); drop.castShadow = drop.receiveShadow = false; drop.visible = false;
+      world.add(drop);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.05, 24), new THREE.MeshBasicMaterial({
+        color: 0x9fb0cc, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide
+      }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(x + (opts.drip.dx || 0), y + 0.006, z + (opts.drip.dz || 0));
+      ring.renderOrder = 2; ring.layers.set(1); world.add(ring);
+      let wait = 1 + Math.random() * 3, fallY = ceilY, vy = 0, ringT = -1;
+      world.addUpdater((dt) => {
+        if (drop.visible) {
+          vy += 9.8 * dt; fallY -= vy * dt;
+          drop.position.set(ring.position.x, fallY, ring.position.z);
+          if (fallY <= y + 0.02) {
+            drop.visible = false; ringT = 0; wait = opts.drip.every || (2.5 + Math.random() * 4);
+            if (OTR.dist2D(x, z, OTR.player.pos.x, OTR.player.pos.z) < 12 && OTR.audio.drip) OTR.audio.drip();
+          }
+        } else {
+          wait -= dt;
+          if (wait <= 0) { drop.visible = true; fallY = ceilY - 0.05; vy = 0; }
+        }
+        if (ringT >= 0) {
+          ringT += dt;
+          const k = ringT / 1.1;
+          if (k >= 1) { ringT = -1; ring.material.opacity = 0; }
+          else { const sc = 1 + k * 9; ring.scale.set(sc, sc, 1); ring.material.opacity = 0.5 * (1 - k); }
+        }
+      });
+    }
+    return m;
+  };
+
+  // ---------- ossuary niche: a recess in a wall stacked with skulls ----------
+  // ang: the wall's facing (the niche opens along +ux). The niche is sunk
+  // behind the wall face (walls are solid boxes), so — like P.lightWell —
+  // it draws first and a depth-only mask over the opening makes the wall
+  // face fail the depth test there. Wall must be at least 0.5 thick.
+  P.ossuary = function (world, x, y, z, ang, opts = {}) {
+    const w = opts.width || 1.2, h = opts.height || 0.9, d = opts.depth || 0.45;
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ang;
+    const stone = opts.material || lib().vaultStone;
+    const mask = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.06, h - 0.06), new THREE.MeshBasicMaterial({ colorWrite: false, fog: false }));
+    mask.rotation.y = Math.PI / 2; mask.position.x = 0.012; mask.renderOrder = -2;
+    mask.castShadow = mask.receiveShadow = false; g.add(mask);
+    world.disposables.push(() => mask.material.dispose());
+    // recess: back, top, bottom, sides — inward faces, so build as an open box of thin slabs
+    const back = mesh(new THREE.BoxGeometry(0.06, h, w), stone, -d, 0, 0, { cast: false }); g.add(back);
+    g.add(mesh(new THREE.BoxGeometry(d, 0.06, w), stone, -d / 2, h / 2, 0, { cast: false }));
+    g.add(mesh(new THREE.BoxGeometry(d, 0.06, w), stone, -d / 2, -h / 2, 0, { cast: false }));
+    g.add(mesh(new THREE.BoxGeometry(d, h, 0.06), stone, -d / 2, 0, w / 2, { cast: false }));
+    g.add(mesh(new THREE.BoxGeometry(d, h, 0.06), stone, -d / 2, 0, -w / 2, { cast: false }));
+    // arched lintel across the opening
+    const arch = mesh(new THREE.TorusGeometry(w * 0.5, 0.06, 8, 20, Math.PI), stone, 0.02, h / 2 - w * 0.12, 0, { cast: false });
+    arch.rotation.y = Math.PI / 2; arch.scale.y = 0.5; g.add(arch);
+    // skulls: rows of bone spheres with eye sockets, jumbled
+    const rnd = OTR.rng((x * 7 + z * 13) | 0 || 5);
+    const bone = lib().bone, socket = new THREE.MeshBasicMaterial({ color: 0x08070a });
+    const rows = opts.rows || 3, per = Math.max(2, Math.floor(w / 0.2));
+    for (let r = 0; r < rows; r++) {
+      for (let i = 0; i < per; i++) {
+        if (rnd() < 0.12) continue;
+        const sx = -d + 0.14 + rnd() * (d - 0.24), sy = -h / 2 + 0.11 + r * 0.19 + (rnd() - 0.5) * 0.02;
+        const sz = -w / 2 + 0.12 + i * (w - 0.24) / (per - 1) + (rnd() - 0.5) * 0.04;
+        const sk = new THREE.Group(); sk.position.set(sx, sy, sz);
+        sk.rotation.set((rnd() - 0.5) * 0.5, (rnd() - 0.5) * 0.9, (rnd() - 0.5) * 0.4);
+        const cr = 0.085 * (0.9 + rnd() * 0.2);
+        const cranium = mesh(new THREE.SphereGeometry(cr, 12, 9), bone, 0, 0, 0, { cast: false });
+        cranium.scale.set(1.1, 1, 1.15); sk.add(cranium);
+        // face toward +x (out of the niche): sockets, nasal hollow, jaw
+        for (const e of [-1, 1]) sk.add(mesh(new THREE.SphereGeometry(cr * 0.28, 7, 6), socket, cr * 0.95, cr * 0.05, e * cr * 0.38, { cast: false }));
+        sk.add(mesh(new THREE.SphereGeometry(cr * 0.16, 6, 5), socket, cr * 1.05, -cr * 0.3, 0, { cast: false }));
+        const jaw = mesh(new THREE.BoxGeometry(cr * 0.9, cr * 0.5, cr * 1.1), bone, cr * 0.5, -cr * 0.75, 0, { cast: false });
+        sk.add(jaw);
+        g.add(sk);
+      }
+      // long bones laid between the rows
+      if (r < rows - 1) {
+        for (let i = 0; i < 3; i++) {
+          const b = mesh(new THREE.CylinderGeometry(0.02, 0.024, w * 0.85, 6), bone, -d + 0.2 + rnd() * 0.15, -h / 2 + 0.2 + r * 0.19, (rnd() - 0.5) * 0.1, { cast: false });
+          b.rotation.x = Math.PI / 2; b.rotation.z = (rnd() - 0.5) * 0.15; g.add(b);
+        }
+      }
+    }
+    g.traverse(o => { if (o.isMesh && o !== mask) o.renderOrder = -3; });
+    // a little light lives in the recess so the skulls read from the passage
+    const fill = new THREE.PointLight(0xc9b48a, opts.fill != null ? opts.fill : 0.35, 2.2, 2);
+    fill.position.set(-0.1, h * 0.3, 0); g.add(fill);
+    world.add(g);
+    return g;
+  };
+
+  // ---------- hanging chain: iron links from the vault, swaying ----------
+  P.chain = function (world, x, yTop, z, length = 1.6, opts = {}) {
+    const g = new THREE.Group(); g.position.set(x, yTop, z);
+    const n = Math.round(length / 0.11);
+    const linkGeo = new THREE.TorusGeometry(0.06, 0.016, 6, 10);
+    for (let i = 0; i < n; i++) {
+      const l = mesh(linkGeo, lib().metal || lib().darkIron, 0, -0.06 - i * 0.1, 0, { cast: false, receive: false });
+      l.rotation.y = (i % 2) * Math.PI / 2; l.scale.y = 1.4;
+      g.add(l);
+    }
+    // whatever hangs from it: a hook, or a ring
+    if (opts.hook !== false) {
+      const hook = mesh(new THREE.TorusGeometry(0.06, 0.014, 6, 12, Math.PI * 1.4), lib().darkIron, 0, -0.06 - n * 0.1, 0, { cast: false });
+      hook.rotation.z = Math.PI * 0.8; g.add(hook);
+    }
+    world.add(g);
+    const seed = Math.random() * 10, amp = opts.sway != null ? opts.sway : 0.05;
+    world.addUpdater((dt, e) => {
+      g.rotation.x = Math.sin(e * 0.9 + seed) * amp;
+      g.rotation.z = Math.sin(e * 0.7 + seed * 2) * amp * 0.6;
+    });
+    return g;
+  };
+
+  // ---------- effigy tomb: a chest tomb with a knight lying on the lid ----------
+  P.effigyTomb = function (world, x, z, ang, opts = {}) {
+    const g = new THREE.Group(); g.position.set(x, world.groundHeight(x, z), z); g.rotation.y = ang;
+    const stone = opts.material || lib().marbleTomb || lib().vaultStone;
+    const L = 2.3, W = 1.0, Hh = 0.8;
+    g.add(mesh(new THREE.BoxGeometry(W, Hh, L), stone, 0, Hh / 2, 0));
+    g.add(mesh(new THREE.BoxGeometry(W + 0.16, 0.1, L + 0.16), stone, 0, Hh + 0.05, 0)); // lid
+    g.add(mesh(new THREE.BoxGeometry(W + 0.12, 0.12, L + 0.12), stone, 0, 0.06, 0));    // plinth
+    // arcaded panel on the long sides
+    for (const sx of [-1, 1]) for (let i = -2; i <= 2; i++) {
+      const a = mesh(new THREE.TorusGeometry(0.14, 0.03, 6, 12, Math.PI), stone, sx * (W / 2 + 0.005), Hh * 0.55, i * 0.42, { cast: false });
+      a.rotation.y = Math.PI / 2; g.add(a);
+    }
+    world.add(g);
+    // the effigy: a stone knight, hands joined, laid on the lid
+    const fig = OTR.figures.make(world, 0, 0, {
+      color: 0x8a8578, armor: true, armorColor: 0x9a968a, height: 1.85, hood: false, static: true
+    });
+    fig.traverse(o => { if (o.isMesh) { o.castShadow = false; if (o.material && o.material.color && o.material.type === 'MeshBasicMaterial') o.material = stone; } });
+    fig.traverse(o => { if (o.isMesh && o.material !== stone) { o.material = new THREE.MeshStandardMaterial({ color: 0x8f8a7c, roughness: 0.85, metalness: 0 }); } });
+    world.scene.remove(fig);
+    const cradle = new THREE.Group();
+    cradle.rotation.x = -Math.PI / 2;
+    cradle.position.set(0, Hh + 0.10 + 0.13, 0.95); // rotation.x = -90°: the figure's up runs to -Z, its face turns up
+    fig.position.set(0, 0, 0); fig.rotation.set(0, 0, 0);
+    // hands joined over the chest
+    // upper arms along the body, forearms folded across the breast
+    // (elbow Euler XYZ: Z swings the forearm across the body, X lifts it off the chest)
+    if (fig.userData.rshoulder) { fig.userData.rshoulder.rotation.set(-0.3, 0, -0.05); fig.userData.rarm.rotation.set(-0.45, 0, -1.35); }
+    if (fig.userData.lshoulder) { fig.userData.lshoulder.rotation.set(-0.3, 0, 0.05); fig.userData.larm.rotation.set(-0.45, 0, 1.35); }
+    cradle.add(fig); g.add(cradle);
+    // a stone lion at the feet
+    const lion = mesh(new THREE.SphereGeometry(0.16, 10, 8), stone, 0, Hh + 0.26, L / 2 - 0.3); lion.scale.set(1.1, 0.9, 1.4); g.add(lion);
+    // axis-aligned collider in world space (rotate by multiples of 90° for a tight fit)
+    const rot = Math.abs(Math.sin(ang)) > 0.5, cw = (rot ? L : W) / 2 + 0.1, cl = (rot ? W : L) / 2 + 0.1;
+    world.boxFromTo(x - cw, z - cl, x + cw, z + cl, 0, Hh + 0.4);
+    return g;
+  };
+
+  // ---------- rats: small dark bodies that bolt along the skirting ----------
+  // A few rats idle in the dark; when the player comes within `startle`
+  // metres of one it runs along its wall to its bolt-hole and vanishes,
+  // then creeps back out after a while.
+  P.rats = function (world, spots, opts = {}) {
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 0.9, metalness: 0 });
+    const startle = opts.startle || 4.5;
+    for (const sp of spots) {
+      const g = new THREE.Group();
+      const body = mesh(new THREE.CapsuleGeometry(0.045, 0.12, 3, 8), bodyMat, 0, 0.045, 0, { cast: false, receive: false });
+      body.rotation.x = Math.PI / 2; body.scale.set(1, 0.8, 1); g.add(body);
+      g.add(mesh(new THREE.SphereGeometry(0.035, 8, 6), bodyMat, 0, 0.05, 0.1, { cast: false, receive: false })); // head
+      for (const s of [-1, 1]) g.add(mesh(new THREE.SphereGeometry(0.014, 6, 5), bodyMat, s * 0.025, 0.075, 0.11, { cast: false, receive: false })); // ears
+      const tail = mesh(new THREE.CylinderGeometry(0.004, 0.009, 0.16, 5), bodyMat, 0, 0.03, -0.14, { cast: false, receive: false });
+      tail.rotation.x = Math.PI / 2 + 0.2; g.add(tail);
+      const home = { x: sp[0], z: sp[1] }, hole = { x: sp[2], z: sp[3] };
+      g.position.set(home.x, world.groundHeight(home.x, home.z), home.z);
+      g.rotation.y = Math.atan2(hole.x - home.x, hole.z - home.z) + Math.PI;
+      world.add(g);
+      const st = { mode: 'idle', t: 0, twitch: Math.random() * 3 };
+      world.addUpdater((dt, e) => {
+        const p = OTR.player;
+        if (st.mode === 'idle') {
+          st.twitch -= dt;
+          if (st.twitch <= 0) { st.twitch = 1 + Math.random() * 3; g.rotation.y += (Math.random() - 0.5) * 0.8; }
+          g.position.y = world.groundHeight(g.position.x, g.position.z) + Math.abs(Math.sin(e * 6)) * 0.003;
+          if (OTR.dist2D(g.position.x, g.position.z, p.pos.x, p.pos.z) < startle) {
+            st.mode = 'bolt'; g.rotation.y = Math.atan2(hole.x - g.position.x, hole.z - g.position.z);
+          }
+        } else if (st.mode === 'bolt') {
+          const dx = hole.x - g.position.x, dz = hole.z - g.position.z, d = Math.hypot(dx, dz);
+          const s = Math.min(d, 3.2 * dt);
+          g.position.x += dx / d * s; g.position.z += dz / d * s;
+          g.position.y = world.groundHeight(g.position.x, g.position.z) + Math.abs(Math.sin(e * 28)) * 0.012;
+          body.scale.y = 0.8 + Math.sin(e * 28) * 0.1;
+          if (d < 0.05) { st.mode = 'hidden'; st.t = 8 + Math.random() * 10; g.visible = false; }
+        } else {
+          st.t -= dt;
+          if (st.t <= 0 && OTR.dist2D(home.x, home.z, p.pos.x, p.pos.z) > startle + 2) {
+            g.visible = true; g.position.set(home.x, world.groundHeight(home.x, home.z), home.z); st.mode = 'idle';
+          }
+        }
+      });
+    }
   };
 
   // ---------- simple door (swings open) ----------

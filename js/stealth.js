@@ -99,10 +99,14 @@
       const fx = fig.position.x, fz = fig.position.z;
 
       // ---- movement ----
+      fig.userData.alert = rec.state === 'suspicious';
       if (rec.state === 'patrol') {
         if (rec.pause > 0) {
           rec.pause -= dt;
-          fig.rotation.y = rec.scan + Math.sin(e * 1.4) * 0.7; // look about
+          // look about: the body turns a little each way while the head
+          // (figures.js) scans on its own; the torch swings with the body
+          fig.faceTo(fx + Math.sin(rec.scan + Math.sin(e * 0.9) * 0.6), fz + Math.cos(rec.scan + Math.sin(e * 0.9) * 0.6));
+          rec.v = Math.max(0, (rec.v || 0) - rec.speed * 3 * dt);
         } else {
           const wp = rec.wp[rec.i];
           const dx = wp[0] - fx, dz = wp[1] - fz, d = Math.hypot(dx, dz);
@@ -110,10 +114,13 @@
             rec.i = (rec.i + 1) % rec.wp.length;
             rec.pause = rec.pauseT * (0.6 + Math.random() * 0.8);
             rec.scan = fig.rotation.y;
+            rec.v = 0;
           } else {
-            const s = Math.min(d, rec.speed * dt);
+            // ease out of the pause and slow into the waypoint
+            rec.v = Math.min(rec.speed, (rec.v || 0) + rec.speed * 1.6 * dt, Math.max(0.3, d * 1.4));
+            const s = Math.min(d, rec.v * dt);
             fig.position.x += dx / d * s; fig.position.z += dz / d * s;
-            fig.position.y = world.groundHeight(fig.position.x, fig.position.z) + Math.abs(Math.sin(e * 7)) * 0.02;
+            fig.position.y = world.groundHeight(fig.position.x, fig.position.z);
             fig.faceTo(wp[0], wp[1]);
             fig.moveCollider && fig.moveCollider();
           }
@@ -122,15 +129,16 @@
         // turn toward where the player was last seen, creep a little closer
         if (rec.lastSeen) {
           fig.faceTo(rec.lastSeen[0], rec.lastSeen[1]);
+          fig.lookAt(rec.lastSeen[0], rec.lastSeen[1]);
           const dx = rec.lastSeen[0] - fx, dz = rec.lastSeen[1] - fz, d = Math.hypot(dx, dz);
           if (d > 2.2) {
-            const s = Math.min(d, rec.speed * 0.6 * dt);
+            const s = Math.min(d, rec.speed * 0.55 * dt);
             fig.position.x += dx / d * s; fig.position.z += dz / d * s;
             fig.moveCollider && fig.moveCollider();
           }
         }
         rec.suspiciousT -= dt;
-        if (rec.suspiciousT <= 0) { rec.state = 'patrol'; rec.pause = 0.8; rec.scan = fig.rotation.y; }
+        if (rec.suspiciousT <= 0) { rec.state = 'patrol'; rec.pause = 1.2; rec.scan = fig.rotation.y; rec.v = 0; fig.lookAt(null); }
       }
 
       // ---- sight ----

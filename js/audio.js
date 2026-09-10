@@ -132,14 +132,17 @@
   };
 
   // ---------- one-shots ----------
-  A.footstep = function (hard) {
+  // vol (optional, 0..1): scales the step — NPC footsteps pass their
+  // distance attenuation here; a distant step is also duller (lower band)
+  A.footstep = function (hard, vol) {
     if (!ctx) return;
     const t = ctx.currentTime;
     const src = ctx.createBufferSource(); src.buffer = noiseBuffer(0.2);
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
-    bp.frequency.value = hard ? 1300 : 520; bp.Q.value = hard ? 1.2 : 0.8;
+    const far = vol != null ? (1 - vol) : 0;
+    bp.frequency.value = (hard ? 1300 : 520) * (1 - 0.55 * far); bp.Q.value = hard ? 1.2 : 0.8;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(hard ? 0.12 : 0.08, t);
+    g.gain.setValueAtTime((hard ? 0.12 : 0.08) * (vol != null ? vol : 1), t);
     g.gain.exponentialRampToValueAtTime(0.0005, t + (hard ? 0.09 : 0.14));
     src.connect(bp); bp.connect(g); g.connect(master);
     src.start(t); src.stop(t + 0.2);
