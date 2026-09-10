@@ -911,13 +911,95 @@
     return m;
   };
 
+  // ---------- light-well: an opening in a ceiling, seen up into ----------
+  // A ceiling slab is one plane, so an opening cannot be cut from it. This
+  // punches through instead: the shaft (a stone tube rising above the
+  // ceiling, capped by a moonlit disc and barred with an iron grate) is
+  // drawn FIRST; then a "mask" disc at the ceiling writes only depth, so the
+  // ceiling that follows fails the depth test over the opening and the
+  // shaft drawn beneath stays visible. Anything nearer than the ceiling
+  // (motes, figures, the beam) draws over it as usual. Replaces the flat
+  // 16-gon black disc that used to sit under every vault light-well.
+  // `mouthY` is the ceiling's UNDERSIDE (P.ceiling centres a 0.4 m slab on
+  // its y, so pass y − 0.2); the shaft rises `depth` above it.
+  P.lightWell = function (world, x, mouthY, z, opts = {}) {
+    const r = opts.radius || 1.0, depth = opts.depth || 3.2;
+    const ceilY = mouthY;
+    const mat = opts.material || lib().vaultStone;
+    const g = new THREE.Group(); g.position.set(x, ceilY, z);
+    // shaft walls: an open tube seen from inside. The winding is reversed
+    // (and normals flipped) so the shared FrontSide stone material draws the
+    // interior — cloning it would lose its stochastic-tiling shader hooks.
+    const tg = new THREE.CylinderGeometry(r, r, depth, 24, 2, true);
+    const ti = tg.index.array;
+    for (let i = 0; i < ti.length; i += 3) { const t = ti[i + 1]; ti[i + 1] = ti[i + 2]; ti[i + 2] = t; }
+    const tn = tg.attributes.normal.array;
+    for (let i = 0; i < tn.length; i++) tn[i] = -tn[i];
+    const tube = new THREE.Mesh(tg, mat);
+    tube.position.y = depth / 2;
+    tube.castShadow = false; tube.receiveShadow = false;
+    tube.renderOrder = -3;
+    g.add(tube);
+    // moonlit cap: bright enough to bloom, so the well reads as open sky
+    const capCol = new THREE.Color(opts.color != null ? opts.color : 0x9fb4e0).multiplyScalar(opts.brightness || 2.2);
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(r * 0.98, 32), new THREE.MeshBasicMaterial({ color: capCol, fog: false }));
+    cap.rotation.x = Math.PI / 2; cap.position.y = depth - 0.02;
+    cap.castShadow = cap.receiveShadow = false; cap.renderOrder = -3;
+    g.add(cap);
+    world.disposables.push(() => cap.material.dispose());
+    // dim light pooling down the shaft walls
+    const fill = new THREE.PointLight(opts.color != null ? opts.color : 0x9fb4e0, 0.6, depth * 1.6, 2);
+    fill.position.y = depth * 0.7; g.add(fill);
+    // iron grate at the mouth
+    if (opts.grate !== false) {
+      const bars = 1 + Math.floor(r / 0.45);
+      for (let i = 0; i < bars; i++) {
+        const off = (i - (bars - 1) / 2) * (2 * r / bars);
+        const len = 2 * Math.sqrt(Math.max(0, r * r - off * off));
+        const bar = mesh(new THREE.BoxGeometry(len, 0.04, 0.045), lib().darkIron, 0, depth * 0.25, off, { cast: false, receive: false });
+        bar.renderOrder = -3; g.add(bar);
+      }
+      const ring = mesh(new THREE.TorusGeometry(r, 0.035, 8, 32), lib().darkIron, 0, depth * 0.25, 0, { cast: false, receive: false });
+      ring.rotation.x = Math.PI / 2; ring.renderOrder = -3; g.add(ring);
+    }
+    // depth-only mask flush under the ceiling
+    const mask = new THREE.Mesh(new THREE.CircleGeometry(r, 32), new THREE.MeshBasicMaterial({ colorWrite: false, fog: false }));
+    mask.rotation.x = Math.PI / 2; mask.position.y = -0.02;
+    mask.renderOrder = -2; mask.castShadow = mask.receiveShadow = false;
+    g.add(mask);
+    world.disposables.push(() => mask.material.dispose());
+    world.add(g);
+    return g;
+  };
+
   // ---------- torch bracket (wall-mounted, non-colliding) ----------
+  // Wall plate, an angled iron arm, and a torch proper seated in its ring:
+  // a wrapped pitch head at the arm's tip, with the fire rising from the
+  // head — not from a point a hand's width below and beside the bare rod.
   P.wallTorch = function (world, x, y, z, ang, opts = {}) {
     const ux = Math.cos(ang), uz = -Math.sin(ang);
-    const bracket = mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 6), lib().darkIron, x + ux * 0.25, y, z + uz * 0.25);
-    // negative tilt leans the bracket's tip AWAY from the wall (out along +ux)
-    bracket.rotation.z = -Math.PI / 2 * 0.6; bracket.rotation.y = ang;
-    world.add(bracket);
+    const tilt = Math.PI / 2 * 0.6;                 // arm leans 54° out from the wall
+    const dx = Math.sin(tilt), dy = Math.cos(tilt);  // unit direction along the arm (out, up)
+    const armLen = 0.55;
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ang;
+    // wall plate with a rivet
+    g.add(mesh(new THREE.BoxGeometry(0.05, 0.28, 0.16), lib().darkIron, 0.02, 0.02, 0, { cast: false }));
+    g.add(mesh(new THREE.SphereGeometry(0.02, 8, 6), lib().darkIron, 0.05, 0.02, 0, { cast: false }));
+    // angled arm
+    const arm = mesh(new THREE.CylinderGeometry(0.03, 0.04, armLen, 7), lib().darkIron, dx * armLen / 2, dy * armLen / 2, 0);
+    arm.rotation.z = -tilt; g.add(arm);
+    // the torch: a wooden haft standing in an iron ring at the arm's tip,
+    // pitch-wrapped head above the ring
+    const tx = dx * armLen, ty = dy * armLen;
+    const haft = mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.42, 8), lib().wood, tx, ty + 0.06, 0);
+    g.add(haft);
+    const ring = mesh(new THREE.TorusGeometry(0.06, 0.014, 8, 14), lib().darkIron, tx, ty + 0.02, 0, { cast: false });
+    ring.rotation.x = Math.PI / 2; g.add(ring);
+    const head = mesh(new THREE.CylinderGeometry(0.065, 0.05, 0.17, 10), lib().darkIron, tx, ty + 0.32, 0);
+    head.material = new THREE.MeshStandardMaterial({ color: 0x1a1410, roughness: 0.75, metalness: 0.05, emissive: 0xff7a1a, emissiveIntensity: 0.9 });
+    g.add(head);
+    world.disposables.push(() => head.material.dispose());
+    world.add(g);
     // soot stain rising up the wall — years of the same torch burning here
     const soot = new THREE.Mesh(
       new THREE.PlaneGeometry(1.1, 1.7),
@@ -926,13 +1008,16 @@
         polygonOffset: true, polygonOffsetFactor: -2, opacity: 0.85
       })
     );
-    soot.position.set(x + ux * 0.03, y + 1.15, z + uz * 0.03);
+    soot.position.set(x + ux * 0.03, y + 1.25, z + uz * 0.03);
     soot.rotation.y = ang;
     soot.renderOrder = 1;
     world.add(soot);
-    // seat the fire on the bracket's tip (≈0.53 out, 0.21 up from the mount)
-    // instead of floating half a metre above it
-    return world.torch(x + ux * 0.55, y + 0.05, z + uz * 0.55, Object.assign({ intensity: 2.4, distance: 11 }, opts));
+    // fire group origin sits ~0.1×size above the flame's base (see
+    // world.torch), so seat it just above the head's top face
+    const dist = opts.distance || 11;
+    const sz = OTR.clamp(dist / 12, 0.5, 1.25);
+    const fy = y + ty + 0.40 + 0.1 * sz;
+    return world.torch(x + ux * tx, fy, z + uz * tx, Object.assign({ intensity: 2.4, distance: 11 }, opts));
   };
 
   // ---------- simple door (swings open) ----------

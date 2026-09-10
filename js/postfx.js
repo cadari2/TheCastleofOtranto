@@ -9,13 +9,27 @@
 
      scene ──▶ rtScene (MSAA, raw linear)
      scene ──depth prepass (override material, layer 0 only)──▶ rtDepth (half)
-     rtDepth ──SSAO──▶ rtAOa ──blur H──▶ rtAOb ──blur V──▶ rtAOa
+     rtDepth ──SSAO──▶ rtAOb ──depth-aware 4×4 box──▶ rtAOa
      rtScene ──bright-pass──▶ rtHalfA ──blur ×2──▶ rtHalfA
      rtHalfA ──resample──▶ rtQuarter ──blur ×2──▶ rtQuarter (wide veil)
      composite: sRGB( grade( screen(ACES(aberrate(rtScene)·AO), bloom·strength) ) )
 
    Quality knobs (setQuality): AO resolution scale and sample count, the
    wide bloom tier, and the aberration amount; OTR.quality drives them.
+
+   Precision: rtScene and the bloom tiers are half-float where the GPU
+   allows (EXT_color_buffer_float). An 8-bit *linear* scene buffer only has
+   a handful of levels below 0.02, and the vaults live there — ACES + sRGB
+   then stretched those steps into posterised contours over every dark
+   wall. The composite also adds a ±½ LSB triangular dither before the 8-bit
+   canvas so slow fog gradients cannot band.
+
+   AO noise: the sample rotation comes from a 4×4 repeating tile and the AO
+   blur is a depth-aware 4×4 box over exactly that tile, so the noise
+   cancels completely. The previous interleaved-gradient noise is built for
+   temporal AA; without it, its ~15 px × ~170 px gradient stripes survived
+   the small gaussian and read as near-horizontal CRT-style banding across
+   the whole frame.
 
    Sprites, flames, glows and particles live on layer 1 so the depth prepass
    (camera masked to layer 0) never writes them — otherwise every torch flame
@@ -34,7 +48,7 @@
     in vec2 vUv; out vec4 outColor;
     uniform sampler2D tScene; uniform float threshold; uniform float knee;
     void main() {
-      vec3 c = texture(tScene, vUv).rgb;
+      vec3 c = min(texture(tScene, vUv).rgb, vec3(2.5)); // half-float scene: cap the HDR peaks
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       float f = smoothstep(threshold, threshold + knee, l);
       outColor = vec4(c * f, 1.0);
@@ -76,15 +90,32 @@
       vec4 clip = vec4((vec3(uv, d) - 0.5) * 2.0, 1.0) * clipW;
       return (projInv * clip).xyz;
     }
-    float ign(vec2 p) { // interleaved gradient noise
-      return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+    // 4×4 repeating rotation tile: 16 fixed angles laid out so that a 4×4
+    // box blur over the AO texels averages every angle exactly once
+    float tileAngle(vec2 p) {
+      vec2 t = floor(mod(p, 4.0));
+      float k = t.x + t.y * 4.0;
+      return fract(k * 0.618034 + t.y * 0.25) * 6.2831853;
+    }
+    uniform vec2 texel;
+    vec3 posAt(vec2 uv) {
+      float d = unpackRGBAToDepth(texture(tDepth, uv));
+      float vz = viewZFromDepth(d);
+      return viewPos(uv, d, vz);
     }
     void main() {
       float d = unpackRGBAToDepth(texture(tDepth, vUv));
       if (d >= 0.999) { outColor = vec4(1.0); return; } // sky / unwritten
       float vz = viewZFromDepth(d);
       vec3 pos = viewPos(vUv, d, vz);
-      vec3 nrm = normalize(cross(dFdx(pos), dFdy(pos)));
+      // normal from the closer of each derivative pair, so silhouettes and
+      // creases don't get a one-texel dark rim from a straddling derivative
+      vec3 pl = posAt(vUv - vec2(texel.x, 0.0)), pr = posAt(vUv + vec2(texel.x, 0.0));
+      vec3 pd = posAt(vUv - vec2(0.0, texel.y)), pu = posAt(vUv + vec2(0.0, texel.y));
+      vec3 dx = (abs(pr.z - pos.z) < abs(pos.z - pl.z)) ? (pr - pos) : (pos - pl);
+      vec3 dy = (abs(pu.z - pos.z) < abs(pos.z - pd.z)) ? (pu - pos) : (pos - pd);
+      vec3 nrm = normalize(cross(dx, dy));
+      if (dot(nrm, -pos) < 0.0) nrm = -nrm; // always face the camera
 
       // world-space radius projected to uv units at this depth
       float uvR = min(0.5 * radius * proj[1][1] / -vz, 0.12);
@@ -93,7 +124,7 @@
         #define AO_SAMPLES 11
       #endif
       const int N = AO_SAMPLES;
-      float ang = ign(gl_FragCoord.xy) * 6.2831853;
+      float ang = tileAngle(gl_FragCoord.xy);
       float occ = 0.0;
       for (int i = 0; i < N; i++) {
         float t = (float(i) + 0.5) / float(N);
@@ -107,10 +138,44 @@
         float l = length(diff);
         float nDotV = dot(nrm, diff / max(l, 1e-4));
         float rangeCheck = 1.0 - smoothstep(0.0, radius, l);
-        occ += max(0.0, nDotV - aoBias) * rangeCheck;
+        // bias in angle plus a distance floor: a flat surface's own texels
+        // (depth quantisation, half-res reprojection) must not self-occlude
+        occ += max(0.0, nDotV - aoBias) * rangeCheck * smoothstep(0.0, 0.03 * radius, l);
       }
       float ao = clamp(1.0 - intensity * occ / float(N) * 2.4, 0.0, 1.0);
       outColor = vec4(vec3(ao), 1.0);
+    }`;
+
+  // depth-aware 4×4 box blur for the AO buffer. The box spans exactly one
+  // period of the 4×4 rotation tile, so the per-texel sample noise averages
+  // out fully; the depth weight stops occlusion bleeding across silhouettes.
+  const AOBLUR = `
+    precision highp float;
+    in vec2 vUv; out vec4 outColor;
+    uniform sampler2D tSrc; uniform sampler2D tDepth; uniform vec2 texel;
+    uniform float near; uniform float far;
+    float unpackRGBAToDepth(vec4 v) {
+      const float UnpackDownscale = 255.0 / 256.0;
+      const vec4 UnpackFactors = UnpackDownscale / vec4(1.0, 255.0, 65025.0, 16581375.0);
+      return dot(v, UnpackFactors);
+    }
+    float viewZ(vec2 uv) {
+      float d = unpackRGBAToDepth(texture(tDepth, uv));
+      return (near * far) / ((far - near) * d - far);
+    }
+    void main() {
+      float z0 = viewZ(vUv);
+      float tol = max(0.05, abs(z0) * 0.04);
+      float acc = 0.0, wsum = 0.0;
+      for (int y = -2; y < 2; y++) {
+        for (int x = -2; x < 2; x++) {
+          vec2 uv = vUv + (vec2(float(x), float(y)) + 0.5) * texel;
+          float w = 1.0 - smoothstep(0.0, tol, abs(viewZ(uv) - z0));
+          w = max(w, 0.02);
+          acc += texture(tSrc, uv).r * w; wsum += w;
+        }
+      }
+      outColor = vec4(vec3(acc / wsum), 1.0);
     }`;
 
   // radial blur of the bright pass toward the light's screen position —
@@ -185,7 +250,13 @@
       float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(lum), c, gSat) * gTint;
       c = c + gLift * (1.0 - c);
-      outColor = vec4(toSRGB(c), 1.0); // single sRGB encode for the canvas
+      // ±½ LSB triangular dither on the encoded value: breaks 8-bit contours
+      // in the slow dark gradients without being visible as noise
+      vec3 o = toSRGB(c);
+      float n1 = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      float n2 = fract(sin(dot(gl_FragCoord.xy + 17.0, vec2(26.651, 61.837))) * 24634.6345);
+      o += (n1 + n2 - 1.0) / 255.0;
+      outColor = vec4(o, 1.0); // single sRGB encode for the canvas
     }`;
 
   class PostFX {
@@ -211,6 +282,12 @@
       this.godrays = { enabled: false, worldPos: new THREE.Vector3(), strength: 0.35, color: new THREE.Color(1, 1, 1) };
 
       const linear = THREE.LinearSRGBColorSpace;
+      // half-float where the GPU can render to it (every WebGL2 desktop
+      // browser; iOS Safari 15+). Falls back to 8-bit otherwise.
+      let hdr = false;
+      try { hdr = !!(renderer.capabilities.isWebGL2 && renderer.extensions.has('EXT_color_buffer_float')); } catch (e) { hdr = false; }
+      this.hdr = hdr;
+      const ttype = hdr ? THREE.HalfFloatType : THREE.UnsignedByteType;
       const size = renderer.getDrawingBufferSize(new THREE.Vector2());
       const w = Math.max(2, size.x | 0), h = Math.max(2, size.y | 0);
       const hw = Math.max(1, w >> 1), hh = Math.max(1, h >> 1);
@@ -218,18 +295,20 @@
       // Full-res target the scene renders into (linear, no colour encoding). MSAA
       // so the base image keeps the antialiasing it had when drawn to the canvas.
       this.rtScene = new THREE.WebGLRenderTarget(w, h, {
-        samples: 4, colorSpace: linear,
+        samples: 4, colorSpace: linear, type: ttype,
         minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: true
       });
-      const halfOpts = { colorSpace: linear, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
+      const halfOpts = { colorSpace: linear, type: ttype, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
+      // AO / depth buffers stay 8-bit: the depth is RGBA-packed, AO is 0..1
+      const aoOpts = { colorSpace: linear, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
       this.rtA = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       this.rtB = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       // depth prepass + AO at half res
       this.rtDepth = new THREE.WebGLRenderTarget(hw, hh, {
         colorSpace: linear, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true
       });
-      this.rtAOa = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
-      this.rtAOb = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
+      this.rtAOa = new THREE.WebGLRenderTarget(hw, hh, aoOpts);
+      this.rtAOb = new THREE.WebGLRenderTarget(hw, hh, aoOpts);
       this.rtGod = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       this._half = new THREE.Vector2(hw, hh);
       // quarter-res tier for the wide bloom veil
@@ -251,6 +330,7 @@
       });
       this.mBright = mk(BRIGHT, { tScene: { value: null }, threshold: { value: this.threshold }, knee: { value: this.knee } });
       this.mBlur = mk(BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
+      this.mAOBlur = mk(AOBLUR, { tSrc: { value: null }, tDepth: { value: null }, texel: { value: new THREE.Vector2() }, near: { value: 0.05 }, far: { value: 1200 } });
       this._mk = mk;
       this._buildSSAO();
       this.mGodray = mk(GODRAY, { tSrc: { value: null }, lightPos: { value: new THREE.Vector2(0.5, 0.5) }, density: { value: 1 } });
@@ -276,7 +356,7 @@
       this.mSSAO = this._mk(SSAO, {
         tDepth: { value: null },
         proj: { value: new THREE.Matrix4() }, projInv: { value: new THREE.Matrix4() },
-        near: { value: 0.05 }, far: { value: 1200 },
+        near: { value: 0.05 }, far: { value: 1200 }, texel: { value: new THREE.Vector2() },
         radius: { value: this.ao.radius }, intensity: { value: this.ao.intensity }, aoBias: { value: this.ao.bias }
       });
       this.mSSAO.defines = { AO_SAMPLES: this.quality.aoSamples | 0 };
@@ -380,18 +460,14 @@
         u.projInv.value.copy(camera.projectionMatrixInverse);
         u.near.value = camera.near; u.far.value = camera.far;
         u.radius.value = this.ao.radius; u.intensity.value = this.ao.intensity; u.aoBias.value = this.ao.bias;
-        this._blit(this.mSSAO, this.rtAOa);
-        // two blur iterations: one leaves the IGN sample noise visible as a
-        // faint dither/grid over dark surfaces
-        const dx = 1 / this._ao.x, dy = 1 / this._ao.y;
-        for (let i = 0; i < 2; i++) {
-          this.mBlur.uniforms.tSrc.value = this.rtAOa.texture;
-          this.mBlur.uniforms.dir.value.set(dx, 0);
-          this._blit(this.mBlur, this.rtAOb);
-          this.mBlur.uniforms.tSrc.value = this.rtAOb.texture;
-          this.mBlur.uniforms.dir.value.set(0, dy);
-          this._blit(this.mBlur, this.rtAOa);
-        }
+        u.texel.value.set(1 / this._ao.x, 1 / this._ao.y);
+        this._blit(this.mSSAO, this.rtAOb);
+        // one depth-aware 4×4 box: exactly one period of the rotation tile
+        const bu = this.mAOBlur.uniforms;
+        bu.tSrc.value = this.rtAOb.texture; bu.tDepth.value = this.rtDepth.texture;
+        bu.texel.value.set(1 / this._ao.x, 1 / this._ao.y);
+        bu.near.value = camera.near; bu.far.value = camera.far;
+        this._blit(this.mAOBlur, this.rtAOa);
       }
 
       // 3) bloom bright-pass at half res

@@ -40,9 +40,8 @@
     const spot = new THREE.SpotLight(0x9fb4e0, intensity, 26, 0.5, 0.7, 1.0);
     spot.position.set(x, 12, z); spot.target.position.set(x, 0, z);
     world.scene.add(spot); world.scene.add(spot.target);
-    P().lightShaft(world, x, ceilY / 2, z, { height: ceilY, radiusTop: 0.7, radiusBottom: 1.9, color: 0x9fb4e0, opacity: 0.16 });
-    const hole = P().mesh(new THREE.CircleGeometry(1.0, 16), new THREE.MeshBasicMaterial({ color: 0x11151f, fog: false }), x, ceilY - 0.03, z, { cast: false });
-    hole.rotation.x = Math.PI / 2; world.add(hole);
+    P().lightShaft(world, x, (ceilY - 0.2) / 2, z, { height: ceilY - 0.2, radiusTop: 0.7, radiusBottom: 1.9, color: 0x9fb4e0, opacity: 0.16 });
+    P().lightWell(world, x, ceilY - 0.2, z, { radius: 1.0, depth: 3.4, color: 0x9fb4e0, brightness: 1.7 });
     world.particles(26, { x0: x - 1.6, x1: x + 1.6, y0: 0.2, y1: 9, z0: z - 1.6, z1: z + 1.6 }, 0xb8c8ec, 0.045, 0.04);
     return spot;
   }

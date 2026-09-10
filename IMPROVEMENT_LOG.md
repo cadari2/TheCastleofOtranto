@@ -373,3 +373,117 @@ they are not.
   band, not wave-driven.
 - Temporal anti-aliasing would let Ultra drop MSAA at 4K.
 - A sharpening pass for Medium/Low, where the image is below native.
+
+---
+
+## Session 5 — 2026-09-10 — banding, torches, figures (v0.5)
+
+### Starting point
+
+Player screenshots from a Retina MacBook (Brave, High preset), Chapter II:
+
+1. **Near-horizontal stripes across every frame**, "like dithering on a
+   CRT": faint bands a few degrees off horizontal, ~15 px wide, repeating
+   every ~170 px, visible over the ceiling, floors and walls, strongest in
+   the dark.
+2. A **flat black 16-gon** hanging under each vault light-well when the
+   player looked up: the "hole" disc that stood in for the opening.
+3. **Wall-torch fire floating** a hand's width below and beside the bare
+   bracket rod instead of burning on a torch.
+4. **Figures still read as chess pawns** — a lathe-turned bulb, a ring, a
+   ball.
+
+### Diagnosis
+
+The stripes are the SSAO's sample-rotation noise. The pass used
+interleaved gradient noise, which is a *gradient* along a nearly
+horizontal direction (`dot(p, (0.0671, 0.0058))`): its wrap lines are
+stripes 1/0.0671 ≈ 15 px apart along x and 1/0.0058 ≈ 170 px along y,
+tilted ~5°. Adjacent pixels along a stripe get near-identical rotation and
+therefore near-identical occlusion estimates; across a wrap the estimate
+jumps. That structure is far larger than the 5-tap gaussian that followed
+it, so it survived unblurred and the ACES + sRGB curve in the dark vaults
+amplified it. IGN is meant to be dissolved by temporal AA, which this
+pipeline does not have.
+
+A second, subtler contributor: the scene render target was 8-bit *linear*.
+Below 0.02 linear an 8-bit channel has ~5 levels, and the vault lives
+there; the composite's tone-map then stretched those steps into contours.
+
+### What changed
+
+**`js/postfx.js`.** The rotation now comes from a 4×4 repeating tile (16
+angles) and the AO blur is a single depth-aware 4×4 box over exactly one
+tile period, so the noise cancels rather than being smeared. Normals are
+reconstructed from the closer of each screen-derivative pair (no one-texel
+dark rim at silhouettes), a small distance floor stops a flat surface's own
+texels self-occluding, and normals are forced to face the camera. The
+scene, bloom and god-ray targets are half-float where
+`EXT_color_buffer_float` exists (falls back to 8-bit); the bright pass caps
+HDR peaks at 2.5 so the 9× sun disc cannot detonate the bloom. The
+composite adds a ±½ LSB triangular dither before the 8-bit canvas so slow
+dark gradients cannot band.
+
+**`props.lightWell`** (new). A ceiling is one slab, so an opening cannot be
+cut from it; the well punches through instead: the shaft (a stone tube
+with reversed winding so the shared tiling material draws its interior, a
+moonlit cap bright enough to bloom, a dim fill light, an iron grate and
+ring at the mouth) renders first at a negative render order, then a
+depth-only mask disc flush under the slab makes the slab fail the depth
+test over the opening. Motes, figures and the beam draw over it normally.
+Chapter II's two `moonShaft`s use it; the black disc is gone. Note the
+mouth is the slab's *underside* (`P.ceiling` centres a 0.4 m box on its
+y), which was the first bug in this session.
+
+**`props.wallTorch`** rebuilt: wall plate and rivet, angled iron arm, and
+a torch proper in an iron ring at the arm's tip — wooden haft, charred
+pitch head with a faint ember emissive — with the fire group seated so the
+flame's base rises from the head (the fire origin sits ~0.1×size above the
+flame base in `world.torch`). The soot stain moved up to match.
+
+**`js/figures.js`** rewritten as articulated humanoids: hips and jointed
+legs (thigh, knee, shin, boot), an elliptical torso with real shoulders,
+neck, an ovoid head with jaw, brow, nose and eyes, jointed arms with
+hands; over that a floor-length gathered robe or a knee-length tunic,
+belt, a half-tube cloak from the shoulders, and a cowl opened toward the
+front with a rolled brim (the face darkened to sit in its shadow). Armour:
+cuirass with a keel, fauld and tassets, pauldrons, gorget, plate legs with
+poleyns, sabatons, and a bascinet with comb, brow band, visor slit and
+bevor. Nothing is rotationally symmetric any more. A per-figure updater
+measures displacement each frame and drives a stride: legs swing from the
+hip with a knee bend, arms counter-swing, the torso bobs and twists; at
+rest the limbs ease to idle sway. This covers `walkTo`, the stealth
+searchers and Isabella's follow without changing their code. The guard's
+torch is a haft in the raised right hand with the fire following the hand
+in world space, so the flame stays upright. `userData.rarm/larm` remain
+the elbow groups for ch4's sword swing.
+
+### Verified
+
+Headless SwiftShader captures of Chapter II at the `trapdoor` checkpoint
+(scratchpad `before/`, `after2/`): looking up under the cloister well shows
+the shaft, grate and moonlit cap instead of a black disc; the corridor
+torch burns on its head at the arm's tip; Isabella follows hooded and
+cloaked mid-stride; the captain patrols with knee bend and raised torch.
+Chapters I, III, IV and V load with zero console errors. The stripe
+structure cannot be reproduced at 720p under SwiftShader (too dark, too
+small), so that fix is verified by construction: a 4×4 box over a 4×4 tile
+has no residual by definition, and the half-float buffer removes the
+quantisation the curve was amplifying.
+
+### Tried and rejected
+
+- Cloning the vault-stone material for the well's tube — `Material.clone`
+  drops the stochastic-tiling `onBeforeCompile`; reversing the tube's
+  winding keeps the shared material.
+- Keeping IGN and widening the gaussian — a ~170 px stripe period would
+  need a blur far wider than any occlusion detail.
+
+### Open for next time
+
+- Real-hardware check of the AO on a Retina display at High (half-res AO
+  at 2× DPR is full CSS-pixel resolution; the tile is then 4 CSS px).
+- Figure hands are mitten spheres; a thumb and a held-object socket would
+  let Manfred draw his sword.
+- The well's cap is a flat disc; a sky-dome sample through it would tie it
+  to the chapter's moon.
