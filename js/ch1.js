@@ -42,6 +42,11 @@
         OTR.game.postfx.setGrade({ tint: 0xfff6ec, saturation: 1.1 });
         OTR.game.postfx.setGodrays(sunDir, { strength: 0.26, color: 0xffe2b0 });
       }
+      // haze glows toward the sun and thins up the walls; the battlements
+      // read crisper than the paving at the same distance
+      if (OTR.atmo) {
+        OTR.atmo.set({ sunDir, sunColor: 0xfff1cf, sunAmount: 0.9, sunPower: 7, heightBase: 0, heightFalloff: 0.06, heightMix: 0.35, noise: 0.25, noiseScale: 0.02 });
+      }
       document.getElementById('vignette').style.opacity = 0.5;
 
       // ---- ground ----
@@ -77,7 +82,7 @@
         const a = Math.random() * Math.PI * 2, d = 34 + Math.random() * 120;
         const x = Math.cos(a) * d, z = Math.sin(a) * d;
         if (Math.abs(x) < 10 && z > R && z < R + 40) continue; // keep church approach clear
-        P().tree(world, x, z, 0.7 + Math.random() * 0.7, -0.04);
+        P().tree(world, x, z, 0.7 + Math.random() * 0.7, -0.04, 0.34, { fringe: d < 110 });
       }
 
       // meadow grass beyond the north gate, along the church approach
@@ -88,6 +93,9 @@
 
       // pollen motes in the sun
       world._pollen = world.particles(90, { x0: -R, x1: R, y0: 0.5, y1: 8, z0: -R, z1: R }, 0xfff0c8, 0.06, 0.15);
+
+      // a fallen feather of the plume, against the west wall
+      OTR.relics.place(world, 'plume', -21.5, -19, 0.3);
 
       // ---- the giant helmet, crushing Conrad ----
       const helmet = P().giantHelmet(world, 0, 0, 2, 1.0);
@@ -166,6 +174,7 @@
     ctx.checkpoint('confined');
     // dim the world to a claustrophobic gloom under the great helm
     world.setFog(0x0e0c0a, 3, 32);
+    if (OTR.atmo) { OTR.atmo.reset(); OTR.atmo.set({ noise: 0.4, noiseScale: 0.12 }); }
     OTR.materials.interiorEnv(world, {
       top: 0x2a2c34, mid: 0x1a1a1f, bottom: 0x0c0c10,
       glows: [{ u: 0.7, v: 0.28, r: 0.156, color: 0xfff6dc, intensity: 0.9 }]

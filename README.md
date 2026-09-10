@@ -1,4 +1,4 @@
-v 0.2
+v 0.4
 # The Castle of Otranto — a playable 3D Gothic tale
 
 A browser-playable, first-person 3D adaptation of Horace Walpole's *The Castle
@@ -35,6 +35,14 @@ recognise specific scenes, and the dialogue is drawn from the book itself:
    strikes down Matilda; then the walls are thrown down and the shade of Alfonso
    rises: *"Behold in Theodore the true heir of Alfonso!"*
 
+**Play:** the interiors are stealth. Manfred's torch-bearing domestics walk
+set rounds; their light announces them around corners, and an eye on the HUD
+fills while one can see you. Crouch behind chests and buttresses, hood the
+lamp when the torchlight comes near, and never run within earshot. Caught
+means back to the last checkpoint. The duel in the wood is a guard-and-strike
+exchange — parry the way he cuts, strike the openings, and three wounds will
+finish you. Five relics, one per chapter, are hidden for those who look.
+
 **Tone:** the exterior chapters are warm and open (courtyard, countryside,
 church, the moonlit wood); the interiors are cold, oppressive, and close (the
 casque, the vaults, the tower, the tomb), with a lamp that gutters in the drafts,
@@ -51,10 +59,14 @@ a chapter-select appears on the title screen for anything you've reached.
 | --- | --- |
 | Move | **W A S D** (or arrow keys) |
 | Look | **Mouse** (click once to lock the pointer) |
-| Run | **Shift** |
+| Run | **Shift** (louder: searchers hear you) |
+| Crouch | **C** (or **Ctrl**) — smaller, slower, hidden behind low cover |
+| Hood the lamp | **F** (in the vaults) — near-invisible, near-blind |
+| Duel guards | **W** high guard · **S** low guard · **A / D** sidestep · **Space** strike |
 | Interact / advance dialogue | **E** (or click, or **Space**) |
 | Duel / prompts | **Space** |
 | Pause / release mouse | **Esc** |
+| Graphics quality | **Graphics** button on the title and pause screens (Auto · Low · Medium · High · Ultra 4K) |
 
 Headphones are recommended — all sound (wind, sea, bells, thunder, the sword,
 the score) is generated procedurally in the browser; there are no audio files.
@@ -124,6 +136,16 @@ That's it. There is nothing to install on the server and no server-side code.
   slowly boil, a sun or moon with a scattering halo, twinkling stars, horizon
   haze. The same shader is baked once per chapter into an equirectangular
   environment map so the lighting on stone and steel matches the sky overhead.
+- The air is lit (`js/atmo.js`): the fog every material receives lies low and
+  thins with height, glows toward the sun or moon, and drifts in slow banks.
+- The image goes through a small post pipeline (`js/postfx.js`): MSAA render,
+  ambient occlusion, two bloom tiers, screen-space light shafts, a whisper of
+  lens aberration, filmic tone mapping and a per-chapter grade.
+- **Graphics presets** (`js/quality.js`): Auto by default, which watches real
+  frame times and settles on Low / Medium / High / Ultra. *Ultra 4K* renders at
+  least 2× the display's pixels (a 3840×2160 internal image on a 1080p screen,
+  native on a 4K or Retina display), full-resolution ambient occlusion, 4096
+  shadow maps and 16× anisotropic filtering. The choice is remembered.
 - Architecture (arches, vaults, towers, crenellations, the giant helmet, sword,
   tomb, and the apparition) is built procedurally in code — no external 3D model
   files — and lit with physically-based materials, real-time shadows, fog, and a

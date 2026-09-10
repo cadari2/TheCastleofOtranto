@@ -36,6 +36,11 @@
         OTR.game.postfx.setGrade({ tint: 0xe6f0ff, saturation: 0.95 });
         OTR.game.postfx.setGodrays(moonDir, { strength: 0.24, color: 0xb9c9ec });
       }
+      // the mist lies in the low ground and thins toward the canopy; it
+      // glows where the moon stands behind it and drifts in slow banks
+      if (OTR.atmo) {
+        OTR.atmo.set({ sunDir: moonDir, sunColor: 0xa4b6de, sunAmount: 0.8, sunPower: 5, heightBase: 0.5, heightFalloff: 0.18, heightMix: 0.7, noise: 0.6, noiseScale: 0.04 });
+      }
       document.getElementById('vignette').style.opacity = 0.8;
 
       // ---- terrain: forest floor sloping down to a beach (+Z = seaward) ----
@@ -59,8 +64,9 @@
       OTR.player.eyeHeight = 1.68;
 
       // ---- the sea ----
-      // slightly rough so the moon breaks into a broad glitter, not a mirror
-      const seaMat = new THREE.MeshStandardMaterial({ color: 0x0e1a2c, roughness: 0.32, metalness: 0.55, transparent: true, opacity: 0.92 });
+      // rolling ripple normals break the moon into a field of glitter and
+      // a slow foam line breathes along the shore (materials.water)
+      const seaMat = OTR.materials.water(world, { color: 0x0e1a2c, shoreZ: shoreZ, foamWidth: 9 });
       const sea = P().mesh(new THREE.PlaneGeometry(400, 200, 40, 20), seaMat, 0, seaY, shoreZ + 96, { cast: false, receive: false });
       sea.rotation.x = -Math.PI / 2; world.add(sea);
       const seaBase = sea.geometry.attributes.position.array.slice();
@@ -78,7 +84,8 @@
         const x = (rng() - 0.5) * 200, z = -20 + rng() * 90;
         if (Math.abs(x) < 5 && z < 76) continue;    // keep the path (and the cleft) clear
         if (z > shoreZ - 6) continue;               // no trees on the beach
-        P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12);
+        // fringe only where the crowns stand against the moon: near the path
+        P().tree(world, x, z, 0.7 + rng() * 0.8, world.groundHeight(x, z), 0.12, { fringe: Math.abs(x) < 34 });
       }
       // undergrowth: swaying grass tufts along the wood (thins near the beach)
       P().grassField(world, { x0: -55, x1: 55, z0: -20, z1: 62 }, 2000, {
@@ -95,6 +102,8 @@
 
       // ---- the sea caves: a rocky headland with cave mouths near the shore ----
       buildCaves(world, 0, shoreZ - 6);
+      // the hermit's beads, on the cave floor beyond the cleft
+      OTR.relics.place(world, 'beads', -9, shoreZ + 1, 0.3);
 
       // moon mist hanging between the trees: a low crawling bed and a taller,
       // thinner drift at head height
@@ -239,28 +248,41 @@
     knight.facePlayer();
     await ctx.say([{ name: '', text: '<span class="dim">He discharges a blow with his sabre. Your valour, so long smothered, breaks forth at once.</span>' }]);
 
+    // The knight telegraphs each stroke: a high cut wants a high guard (W),
+    // a low sweep a low one (S), a lunge a sidestep (A/D); openings want a
+    // strike (SPACE). The wrong guard is as bad as none. Three wounds and
+    // you fall among the rocks.
     const rounds = [
-      { label: 'PARRY his blow!', ok: 'You turn the stroke on your shield.', ms: 1100 },
-      { label: 'STRIKE!', ok: 'Your blade bites home &mdash; first wound.', ms: 1000 },
-      { label: 'PARRY!', ok: 'Steel rings on steel.', ms: 950 },
-      { label: 'STRIKE!', ok: 'He staggers &mdash; a second wound.', ms: 900 },
-      { label: 'DISARM him!', ok: 'You beat the sabre from his hand. He faints from loss of blood.', ms: 900 },
+      { label: 'He cuts HIGH &mdash; guard high!', key: 'W', ms: 1150 },
+      { label: 'An opening &mdash; STRIKE!', key: 'SPACE', ms: 1000 },
+      { label: 'He sweeps LOW &mdash; guard low!', key: 'S', ms: 1050 },
+      { label: 'He lunges &mdash; step LEFT!', key: 'A', ms: 950 },
+      { label: 'STRIKE!', key: 'SPACE', ms: 900 },
+      { label: 'HIGH again!', key: 'W', ms: 900 },
+      { label: 'He lunges &mdash; step RIGHT!', key: 'D', ms: 850 },
+      { label: 'DISARM him!', key: 'SPACE', ms: 850 },
     ];
-    let i = 0;
+    let i = 0, wounds = 0;
+    const armSwing = (k) => { if (knight.userData.rarm) knight.userData.rarm.rotation.z = k === 'W' ? -1.2 : k === 'S' ? 0.4 : -0.5; };
     while (i < rounds.length) {
       const r = rounds[i];
+      armSwing(r.key);
       OTR.audio.sword();
-      const success = await ctx.qte(r.label, 'SPACE', r.ms);
+      const success = await ctx.qte(r.label.replace(/&mdash;/g, '\u2014'), r.key, r.ms);
       if (success) {
         OTR.audio.sword();
-        knight.userData.rarm && (knight.userData.rarm.rotation.z -= 0.15);
         i++;
-        await new Promise(res => setTimeout(res, 300));
+        await new Promise(res => setTimeout(res, 320));
       } else {
-        // a miss: take a hit, retry the same round
+        wounds++;
         OTR.ui.damage();
         OTR.audio.stinger('hit');
-        await ctx.say([{ name: '', text: '<span class="dim">His blow lands. You reel &mdash; but keep your feet.</span>' }]);
+        if (wounds >= 3) {
+          OTR.ui.letterbox(false);
+          ctx.fail('duel', 'The sabre finds you a third time. You fall among the rocks, and the knight passes on to Isabella.');
+          return;
+        }
+        await ctx.say([{ name: '', text: `<span class="dim">His blow lands. You reel &mdash; ${wounds === 1 ? 'a first wound' : 'a second wound; one more will finish you'}.</span>` }]);
       }
     }
     OTR.ui.letterbox(false);

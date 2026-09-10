@@ -600,7 +600,55 @@
     geo.computeVertexNormals();
     return geo;
   }
-  P.tree = function (world, x, z, scale = 1, groundY = 0, bright = 0.34) {
+  // Crown fringe: alpha-tested leaf-cluster cards seated on each lobe's
+  // shell, facing outward. The lobes keep the mass; the cards break the
+  // icosahedron facets in silhouette (the giveaway against the sky/moon).
+  // One merged geometry per tree = one extra draw call. Layer 1 so the
+  // SSAO depth prepass, which ignores alphaTest, cannot halo the quads.
+  function crownFringe(lobes, seed, color) {
+    const rnd = OTR.rng(seed);
+    const pos = [], nrm = [], uv = [], idx = [];
+    const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
+    const d = new THREE.Vector3(), t1 = new THREE.Vector3(), t2 = new THREE.Vector3();
+    for (const L of lobes) {
+      const n = Math.round(9 + L.r * 3);
+      for (let i = 0; i < n; i++) {
+        // outward direction, biased to the upper/outer shell where it shows
+        const th = rnd() * Math.PI * 2, ph = Math.acos(1 - rnd() * 1.6);
+        d.set(Math.sin(ph) * Math.cos(th), Math.cos(ph) * 0.78, Math.sin(ph) * Math.sin(th)).normalize();
+        const s = L.r * (0.5 + rnd() * 0.35);
+        const cx = L.x + d.x * L.r * 0.92, cy = L.y + d.y * L.r * 0.92, cz = L.z + d.z * L.r * 0.92;
+        q.setFromUnitVectors(up, d);
+        const roll = rnd() * Math.PI * 2;
+        t1.set(Math.cos(roll), Math.sin(roll), 0).applyQuaternion(q);
+        t2.set(-Math.sin(roll), Math.cos(roll), 0).applyQuaternion(q);
+        const base = pos.length / 3;
+        for (const [a, b, u, v] of [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1]]) {
+          pos.push(cx + (t1.x * a + t2.x * b) * s, cy + (t1.y * a + t2.y * b) * s, cz + (t1.z * a + t2.z * b) * s);
+          nrm.push(d.x, d.y, d.z);
+          uv.push(u, v);
+        }
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    const mat = new THREE.MeshStandardMaterial({
+      map: lib().leafCardTex, alphaTest: 0.45, side: THREE.DoubleSide,
+      roughness: 1, metalness: 0, color
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = false; m.receiveShadow = true;
+    m.layers.set(1);
+    return m;
+  }
+
+  // opts.fringe: add the leaf-card crown fringe (trees near the player's
+  // path; far trees dissolve in fog and keep the cheap lobes only)
+  P.tree = function (world, x, z, scale = 1, groundY = 0, bright = 0.34, opts = {}) {
     const g = new THREE.Group(); g.position.set(x, groundY, z);
     const h = (5 + Math.random() * 3) * scale;
     const trunk = mesh(new THREE.CylinderGeometry(0.15 * scale, 0.42 * scale, h, 7), lib().wood, 0, h / 2, 0);
@@ -617,6 +665,7 @@
     }
     const night = bright < 0.2;
     const clusters = 5 + (Math.random() * 3 | 0);
+    const lobes = []; let firstColor = null;
     for (let i = 0; i < clusters; i++) {
       // first lobe sits centred and large so the crown has no see-through core
       const central = i === 0;
@@ -633,7 +682,10 @@
         h * (central ? 0.86 : 0.72 + Math.random() * 0.35),
         central ? 0 : (Math.random() - 0.5) * 2.0 * scale);
       g.add(lobe);
+      lobes.push({ x: lobe.position.x, y: lobe.position.y, z: lobe.position.z, r: cs });
+      if (!firstColor) firstColor = mat.color.clone().multiplyScalar(night ? 1.6 : 1.15);
     }
+    if (opts.fringe) g.add(crownFringe(lobes, (x * 17 + z * 5) | 0 || 1, firstColor));
     world.add(g);
     world.cyl(x, z, 0.4 * scale, groundY, groundY + h);
     return g;

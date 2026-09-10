@@ -113,6 +113,7 @@
     OTR.ui.resetDialogue();
     OTR.ui.init();
     OTR.player.frozen = false;
+    OTR.player.crouched = false;
     OTR.ui.hideAllHud();
     OTR.ui.toast('', 0);
     document.getElementById('toast').style.opacity = 0;
@@ -121,6 +122,7 @@
     G.adapt = null;
     OTR.game.renderer.toneMappingExposure = 1.05;
     if (G.postfx) G.postfx.resetGrade();
+    if (OTR.atmo) OTR.atmo.reset();
 
     await OTR.ui.fadeOut(600);
 
@@ -181,6 +183,7 @@
     }
     if (adaptSpec) adaptExposure(adaptSpec.from, adaptSpec.seconds, true);
     await OTR.ui.fadeIn(1200);
+    if (G.pendingToast) { OTR.ui.toast(G.pendingToast, 4200); G.pendingToast = null; }
 
     // request pointer lock
     if (!OTR.input.locked) OTR.input.requestLock();
@@ -210,7 +213,9 @@
     if (G.transitioning) return;
     OTR.ui.damage();
     await OTR.ui.fadeOut(900);
-    if (message) OTR.ui.toast(message, 2600);
+    // shown once the checkpoint has faded back in — startChapter wipes the
+    // toast while it rebuilds, so an immediate toast was never seen
+    G.pendingToast = message || null;
     startChapter(G.chapter, beatId !== undefined ? beatId : G.beat);
   }
 
@@ -258,6 +263,7 @@
   function pauseGame() {
     if (!G.running || G.paused) return;
     G.paused = true;
+    refreshRelics();
     OTR.input.exitLock();
     document.getElementById('pause-screen').classList.remove('hidden');
     OTR.audio.setMaster(0.35);
@@ -270,7 +276,7 @@
     OTR.input.requestLock();
   }
   function toTitle() {
-    G.running = false; G.paused = false;
+    G.running = false; G.paused = false; G.pendingToast = null;
     if (G.world) { G.world.dispose(); G.world = null; }
     OTR.audio.stopAmbience();
     OTR.input.exitLock();
@@ -297,6 +303,8 @@
     let dt = (now - last) / 1000; last = now;
     dt = Math.min(dt, 0.05);
 
+    if (OTR.atmo && !G.paused) OTR.atmo.tick(dt);
+    if (OTR.quality) OTR.quality.tick(dt, G.running && !G.paused && !G.transitioning);
     if (G.adapt && !G.paused) {
       const a = G.adapt; a.t += dt;
       const k = OTR.smoothstep(0, 1, a.t / a.dur);
@@ -312,6 +320,19 @@
         if (inp.interactPressed) { inp.interactPressed = false; G.world.tryInteract(); }
       }
       if (inp.escPressed) { inp.escPressed = false; pauseGame(); }
+      // crouch (C / Ctrl) and the lamp hood (F)
+      if (inp.crouchPressed) {
+        inp.crouchPressed = false;
+        if (!OTR.player.frozen) { OTR.player.crouched = !OTR.player.crouched; OTR.ui.setCrouch(OTR.player.crouched); }
+      }
+      if (inp.shutterPressed) {
+        inp.shutterPressed = false;
+        const lamp = G.world.lamp;
+        if (lamp && lamp.on && !OTR.player.frozen) {
+          lamp.shuttered = !lamp.shuttered;
+          OTR.ui.toast(lamp.shuttered ? 'You hood the lamp. The dark closes in&mdash;but so does your cover.' : 'You unhood the lamp.', 2200);
+        }
+      }
 
       OTR.player.update(dt);
       G.world.update(dt);
@@ -338,6 +359,7 @@
       cont.textContent = 'Continue — Chapter ' + toRoman(save.chapter) + ': ' + CHAPTER_META[save.chapter].name;
     } else cont.classList.add('hidden');
 
+    refreshRelics();
     const completed = (() => { try { return localStorage.getItem('otranto.completed'); } catch (e) { return null; } })();
     const maxCh = completed ? 5 : (save ? save.chapter : 1);
     chapBtn.classList.remove('hidden');
@@ -352,8 +374,17 @@
     }
   }
 
+  function refreshRelics() {
+    if (!OTR.relics) return;
+    const n = OTR.relics.count(), t = OTR.relics.list.length;
+    document.querySelectorAll('.relic-tally').forEach(el => {
+      el.textContent = n ? `Relics found: ${n} of ${t}` : `Five relics lie hidden along the way`;
+    });
+  }
+
   function boot() {
     initRenderer();
+    if (OTR.quality) OTR.quality.init(G);
     OTR.materials.init(G.renderer);
     initGrain();
     OTR.ui.init();
@@ -374,6 +405,7 @@
       OTR.audio.init();
       document.getElementById('chapter-select').classList.toggle('hidden');
     };
+    if (OTR.relics) OTR.relics.onChange = refreshRelics;
     document.getElementById('btn-resume').onclick = resumeGame;
     document.getElementById('btn-restart-beat').onclick = () => {
       document.getElementById('pause-screen').classList.add('hidden');
@@ -402,14 +434,15 @@
 
   // ---------------- debug ----------------
   window.OTRDEBUG = {
-    gotoChapter: (n, beat) => startChapter(n, beat || null),
+    gotoChapter: (n, beat) => { G.pendingToast = null; return startChapter(n, beat || null); },
     beat: () => G.beat,
     noclip: (on = true) => { OTR.player._noclip = on; if (on) { G.world.collidersNear = () => new Set(); } },
     teleport: (x, z) => { OTR.player.pos.x = x; OTR.player.pos.z = z; },
     pos: () => ({ x: +OTR.player.pos.x.toFixed(2), z: +OTR.player.pos.z.toFixed(2), yaw: +OTR.player.yaw.toFixed(2) }),
     win: () => nextChapter(),
     world: () => G.world,
-    clearSave: () => { localStorage.removeItem(SAVE_KEY); localStorage.removeItem('otranto.completed'); refreshMenu(); },
+    clearSave: () => { localStorage.removeItem(SAVE_KEY); localStorage.removeItem('otranto.completed'); OTR.relics && OTR.relics.clear(); refreshMenu(); },
+    detect: () => OTR.stealth ? OTR.stealth.level(G.world) : 0,
     skipCards: () => { [1,2,3,4,5].forEach(i => { if (OTR.chapters[i]) OTR.chapters[i].card = false; }); },
     ready: true
   };

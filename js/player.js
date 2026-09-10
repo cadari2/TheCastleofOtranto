@@ -11,13 +11,17 @@
     speed: 3.1, runMul: 1.85,
     bob: 0, stepAccum: 0,
     frozen: false, canRun: true,
+    crouched: false, crouchMul: 0.62, // eye-height and speed scale while crouched
     world: null, camera: null,
   };
+  // current eye height (crouch eases in over a few frames)
+  P._eye = 1.68;
+  P.eye = () => P._eye;
 
   P.reset = function (x, z, yaw) {
     P.pos.set(x, 0, z);
     P.yaw = yaw || 0; P.pitch = 0;
-    P.bob = 0; P.stepAccum = 0; P.frozen = false;
+    P.bob = 0; P.stepAccum = 0; P.frozen = false; P.crouched = false; P._eye = P.eyeHeight;
     if (P.world) P.pos.y = P.world.groundHeight(x, z) + P.eyeHeight;
   };
 
@@ -30,7 +34,7 @@
   // Move with sliding collision. Tries full move, then axis-separated.
   function tryMove(nx, nz) {
     const w = P.world;
-    const feetY = P.pos.y - P.eyeHeight;
+    const feetY = P.pos.y - P._eye;
     let px = nx, pz = nz;
     for (let iter = 0; iter < 4; iter++) {
       let moved = false;
@@ -70,7 +74,7 @@
           .addScaledVector(fwd, mv.f)
           .addScaledVector(right, mv.s);
         if (dir.lengthSq() > 0) dir.normalize();
-        let sp = P.speed * (mv.run && P.canRun ? P.runMul : 1);
+        let sp = P.speed * (mv.run && P.canRun && !P.crouched ? P.runMul : 1) * (P.crouched ? P.crouchMul : 1);
         vx = dir.x * sp; vz = dir.z * sp;
         movingSpeed = sp;
       }
@@ -95,9 +99,11 @@
       P.bob += dt * 0.6;
     }
 
-    // ---- ground follow ----
+    // ---- ground follow (and the crouch ease) ----
+    const eyeTarget = P.eyeHeight * (P.crouched ? P.crouchMul : 1);
+    P._eye += (eyeTarget - P._eye) * Math.min(1, dt * 9);
     const gh = P.world ? P.world.groundHeight(P.pos.x, P.pos.z) : 0;
-    const targetY = gh + P.eyeHeight;
+    const targetY = gh + P._eye;
     P.pos.y += (targetY - P.pos.y) * Math.min(1, dt * 12);
 
     // ---- apply to camera ----

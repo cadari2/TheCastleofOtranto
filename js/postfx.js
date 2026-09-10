@@ -11,7 +11,11 @@
      scene ──depth prepass (override material, layer 0 only)──▶ rtDepth (half)
      rtDepth ──SSAO──▶ rtAOa ──blur H──▶ rtAOb ──blur V──▶ rtAOa
      rtScene ──bright-pass──▶ rtHalfA ──blur ×2──▶ rtHalfA
-     composite: sRGB( grade( screen(ACES(rtScene·AO), bloom·strength) ) )
+     rtHalfA ──resample──▶ rtQuarter ──blur ×2──▶ rtQuarter (wide veil)
+     composite: sRGB( grade( screen(ACES(aberrate(rtScene)·AO), bloom·strength) ) )
+
+   Quality knobs (setQuality): AO resolution scale and sample count, the
+   wide bloom tier, and the aberration amount; OTR.quality drives them.
 
    Sprites, flames, glows and particles live on layer 1 so the depth prepass
    (camera masked to layer 0) never writes them — otherwise every torch flame
@@ -85,7 +89,10 @@
       // world-space radius projected to uv units at this depth
       float uvR = min(0.5 * radius * proj[1][1] / -vz, 0.12);
 
-      const int N = 11;
+      #ifndef AO_SAMPLES
+        #define AO_SAMPLES 11
+      #endif
+      const int N = AO_SAMPLES;
       float ang = ign(gl_FragCoord.xy) * 6.2831853;
       float occ = 0.0;
       for (int i = 0; i < N; i++) {
@@ -129,9 +136,9 @@
   const COMPOSITE = `
     precision highp float;
     in vec2 vUv; out vec4 outColor;
-    uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tAO;
+    uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tBloomWide; uniform sampler2D tAO;
     uniform sampler2D tGod; uniform vec3 godColor; uniform float godStrength;
-    uniform float strength; uniform float exposure;
+    uniform float strength; uniform float wideStrength; uniform float exposure; uniform float aberration;
     uniform float aoStrength; uniform float aoPower;
     uniform vec3 gTint; uniform float gSat; uniform float gLift;
     // three.js ACESFilmicToneMapping, reproduced here because r160 skips tone
@@ -162,8 +169,14 @@
     void main() {
       float ao = pow(clamp(texture(tAO, vUv).r, 0.0, 1.0), aoPower);
       float aoF = mix(1.0, ao, aoStrength);
-      vec3 base = aces(texture(tScene, vUv).rgb * aoF); // occlude in linear, then tone-map
-      vec3 bloom = texture(tBloom, vUv).rgb;            // linear highlights
+      // lens: faint radial chromatic aberration — the red and blue channels
+      // are fetched a hair outward/inward, growing toward the frame edge
+      vec2 rad = vUv - 0.5;
+      vec2 off = rad * dot(rad, rad) * 4.0 * aberration;
+      vec3 sc = vec3(texture(tScene, vUv + off).r, texture(tScene, vUv).g, texture(tScene, vUv - off).b);
+      vec3 base = aces(sc * aoF);                       // occlude in linear, then tone-map
+      // two bloom tiers: a tight half-res glow plus a broad quarter-res veil
+      vec3 bloom = texture(tBloom, vUv).rgb + texture(tBloomWide, vUv).rgb * wideStrength;
       // screen-blend the bloom so highlights glow without washing mid-tones
       vec3 b = bloom * strength;
       vec3 c = 1.0 - (1.0 - base) * (1.0 - b);
@@ -190,6 +203,9 @@
         strength: 0.85, power: 1.1
       };
       this.grade = { tint: new THREE.Color(1, 1, 1), saturation: 1, lift: 0 };
+      // lens and quality knobs (see setQuality / OTR.quality)
+      this.lens = { aberration: opts.aberration != null ? opts.aberration : 0.0025 };
+      this.quality = { aoScale: 0.5, aoSamples: 11, wideBloom: true, wideStrength: 0.55 };
       // chapters aim this at their sun/moon (world-space position far away);
       // strength fades automatically as the light leaves the view
       this.godrays = { enabled: false, worldPos: new THREE.Vector3(), strength: 0.35, color: new THREE.Color(1, 1, 1) };
@@ -216,6 +232,13 @@
       this.rtAOb = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       this.rtGod = new THREE.WebGLRenderTarget(hw, hh, halfOpts);
       this._half = new THREE.Vector2(hw, hh);
+      // quarter-res tier for the wide bloom veil
+      const qw = Math.max(1, hw >> 1), qh = Math.max(1, hh >> 1);
+      this.rtQa = new THREE.WebGLRenderTarget(qw, qh, halfOpts);
+      this.rtQb = new THREE.WebGLRenderTarget(qw, qh, halfOpts);
+      this._quarter = new THREE.Vector2(qw, qh);
+      this._ao = new THREE.Vector2(hw, hh);
+      this._size = new THREE.Vector2(w, h);
 
       this.depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
       this.depthMat.side = THREE.DoubleSide; // vault interiors are backfaces
@@ -228,19 +251,15 @@
       });
       this.mBright = mk(BRIGHT, { tScene: { value: null }, threshold: { value: this.threshold }, knee: { value: this.knee } });
       this.mBlur = mk(BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
-      this.mSSAO = mk(SSAO, {
-        tDepth: { value: null },
-        proj: { value: new THREE.Matrix4() }, projInv: { value: new THREE.Matrix4() },
-        near: { value: 0.05 }, far: { value: 1200 },
-        radius: { value: this.ao.radius }, intensity: { value: this.ao.intensity }, aoBias: { value: this.ao.bias }
-      });
+      this._mk = mk;
+      this._buildSSAO();
       this.mGodray = mk(GODRAY, { tSrc: { value: null }, lightPos: { value: new THREE.Vector2(0.5, 0.5) }, density: { value: 1 } });
       this.blackTex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
       this.blackTex.needsUpdate = true;
       this.mComposite = mk(COMPOSITE, {
-        tScene: { value: null }, tBloom: { value: null }, tAO: { value: this.whiteTex },
+        tScene: { value: null }, tBloom: { value: null }, tBloomWide: { value: this.blackTex }, tAO: { value: this.whiteTex },
         tGod: { value: this.blackTex }, godColor: { value: new THREE.Color(1, 1, 1) }, godStrength: { value: 0 },
-        strength: { value: this.strength }, exposure: { value: 1 },
+        strength: { value: this.strength }, wideStrength: { value: 0 }, exposure: { value: 1 }, aberration: { value: 0 },
         aoStrength: { value: this.ao.strength }, aoPower: { value: this.ao.power },
         gTint: { value: new THREE.Color(1, 1, 1) }, gSat: { value: 1 }, gLift: { value: 0 }
       });
@@ -250,6 +269,28 @@
       this.quadScene.add(this.quad);
       this.quadCam = new THREE.Camera();
       this._cc = new THREE.Color();
+    }
+
+    _buildSSAO() {
+      if (this.mSSAO) this.mSSAO.dispose();
+      this.mSSAO = this._mk(SSAO, {
+        tDepth: { value: null },
+        proj: { value: new THREE.Matrix4() }, projInv: { value: new THREE.Matrix4() },
+        near: { value: 0.05 }, far: { value: 1200 },
+        radius: { value: this.ao.radius }, intensity: { value: this.ao.intensity }, aoBias: { value: this.ao.bias }
+      });
+      this.mSSAO.defines = { AO_SAMPLES: this.quality.aoSamples | 0 };
+    }
+
+    // quality: { aoScale (0.5 half-res, 1 full), aoSamples, wideBloom }
+    setQuality(q = {}) {
+      const cur = this.quality;
+      const samples = q.aoSamples != null ? q.aoSamples : cur.aoSamples;
+      if (samples !== cur.aoSamples) { cur.aoSamples = samples; this._buildSSAO(); }
+      if (q.aoScale != null) cur.aoScale = q.aoScale;
+      if (q.wideBloom != null) cur.wideBloom = q.wideBloom;
+      if (q.aberration != null) this.lens.aberration = q.aberration;
+      this.setSize(this._size.x, this._size.y);
     }
 
     // per-chapter look control -------------------------------------------
@@ -278,11 +319,18 @@
       this.rtScene.setSize(w, h);
       this.rtA.setSize(hw, hh);
       this.rtB.setSize(hw, hh);
-      this.rtDepth.setSize(hw, hh);
-      this.rtAOa.setSize(hw, hh);
-      this.rtAOb.setSize(hw, hh);
+      const aw = Math.max(1, Math.round(w * this.quality.aoScale)), ah = Math.max(1, Math.round(h * this.quality.aoScale));
+      this.rtDepth.setSize(aw, ah);
+      this.rtAOa.setSize(aw, ah);
+      this.rtAOb.setSize(aw, ah);
       this.rtGod.setSize(hw, hh);
+      const qw = Math.max(1, hw >> 1), qh = Math.max(1, hh >> 1);
+      this.rtQa.setSize(qw, qh);
+      this.rtQb.setSize(qw, qh);
       this._half.set(hw, hh);
+      this._quarter.set(qw, qh);
+      this._ao.set(aw, ah);
+      this._size.set(w, h);
     }
 
     _blit(mat, target) {
@@ -335,7 +383,7 @@
         this._blit(this.mSSAO, this.rtAOa);
         // two blur iterations: one leaves the IGN sample noise visible as a
         // faint dither/grid over dark surfaces
-        const dx = 1 / this._half.x, dy = 1 / this._half.y;
+        const dx = 1 / this._ao.x, dy = 1 / this._ao.y;
         for (let i = 0; i < 2; i++) {
           this.mBlur.uniforms.tSrc.value = this.rtAOa.texture;
           this.mBlur.uniforms.dir.value.set(dx, 0);
@@ -372,6 +420,25 @@
         }
       }
 
+      // 3c) wide tier: the bright pass downsampled to quarter res and blurred
+      // there, so torches and the sun bleed into a broad soft veil
+      let wide = false;
+      if (this.quality.wideBloom) {
+        wide = true;
+        this.mBlur.uniforms.tSrc.value = this.rtA.texture;
+        this.mBlur.uniforms.dir.value.set(0, 0); // weights sum to 1: plain resample
+        this._blit(this.mBlur, this.rtQa);
+        const qx = 1 / this._quarter.x, qy = 1 / this._quarter.y;
+        for (let i = 0; i < 2; i++) {
+          this.mBlur.uniforms.tSrc.value = this.rtQa.texture;
+          this.mBlur.uniforms.dir.value.set(qx * 1.5, 0);
+          this._blit(this.mBlur, this.rtQb);
+          this.mBlur.uniforms.tSrc.value = this.rtQb.texture;
+          this.mBlur.uniforms.dir.value.set(0, qy * 1.5);
+          this._blit(this.mBlur, this.rtQa);
+        }
+      }
+
       // 4) separable gaussian blur, two iterations
       const dx = 1 / this._half.x, dy = 1 / this._half.y;
       for (let i = 0; i < 2; i++) {
@@ -392,6 +459,9 @@
       cu.godStrength.value = godAmount;
       cu.godColor.value.copy(this.godrays.color);
       cu.strength.value = this.strength;
+      cu.tBloomWide.value = wide ? this.rtQa.texture : this.blackTex;
+      cu.wideStrength.value = wide ? this.strength * this.quality.wideStrength : 0;
+      cu.aberration.value = this.lens.aberration;
       cu.exposure.value = r.toneMappingExposure; // chapters retune this
       cu.aoStrength.value = this.ao.enabled ? this.ao.strength : 0;
       cu.aoPower.value = this.ao.power;

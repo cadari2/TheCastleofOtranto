@@ -90,6 +90,7 @@ body { font-family: Georgia, 'Times New Roman', serif; color: #d8cfc0; }
 .menu-btn:hover { color: #f4ead2; border-color: #c9b98f; background: rgba(120,95,50,.12);
   box-shadow: 0 0 24px rgba(150,120,60,.18); }
 .menu-btn:disabled { opacity: .35; cursor: default; }
+.menu-btn.small { font-size: 13.5px; letter-spacing: .16em; padding: 8px 26px; color: #a89c80; border-color: rgba(160,140,100,.25); }
 .hint { color: #6f6650; font-size: 13.5px; line-height: 1.7; letter-spacing: .05em; }
 #loading { margin-top: 18px; font-style: italic; color: #857a5f; font-size: 15px; }
 #chapter-select { display: flex; flex-direction: column; gap: 8px; }
@@ -108,3 +109,17 @@ body { font-family: Georgia, 'Times New Roman', serif; color: #d8cfc0; }
 /* version tag, title-screen corner */
 #version { position: absolute; right: 16px; bottom: 12px; color: #6f6650;
   font-size: 13px; letter-spacing: .12em; font-style: italic; pointer-events: none; }
+
+/* ---------- stealth HUD ---------- */
+#lamp-meter.shut { border-color: rgba(120,110,90,.35); }
+#crouch { position: absolute; bottom: 44px; left: 34px; font-size: 12px; letter-spacing: .28em;
+  text-transform: uppercase; color: #9a917c; opacity: 0; transition: opacity .3s; text-shadow: 0 1px 3px #000; }
+#detect { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); opacity: 0; transition: opacity .4s; }
+#detect-eye { width: 46px; height: 26px; border: 2px solid rgba(220,205,170,.55); border-radius: 50% / 50%;
+  overflow: hidden; position: relative; box-shadow: 0 0 14px rgba(0,0,0,.7); background: rgba(10,8,6,.5); }
+#detect-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0;
+  background: linear-gradient(0deg, #b8963c, #e9c874); transition: height .12s linear; }
+#detect.sus #detect-eye { border-color: rgba(233,200,116,.9); }
+#detect.alert #detect-eye { border-color: #e85a3a; box-shadow: 0 0 18px rgba(232,90,58,.55); }
+#detect.alert #detect-fill { background: linear-gradient(0deg, #8a1d10, #e85a3a); }
+.relic-tally { margin-top: 10px; font-style: italic; color: #857a5f; font-size: 13.5px; letter-spacing: .08em; }

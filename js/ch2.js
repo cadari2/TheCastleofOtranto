@@ -68,6 +68,7 @@
         ]
       });
       world.setFog(0x06070b, 2, 22);
+      if (OTR.atmo) OTR.atmo.set({ noise: 0.5, noiseScale: 0.1 }); // the dark breathes
       world.hardFloor = true;
       OTR.game.renderer.toneMappingExposure = 1.0;
       if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xe8f0ff, saturation: 0.88 });
@@ -122,6 +123,19 @@
       wallRuns.forEach(([x0, z0, x1, z1, h = H, baseY = 0]) =>
         P().wall(world, x0, z0, x1, z1, h, 0.6, L().vaultStone, { baseY }));
 
+      // buttresses along the long cross corridor: cover to crouch behind
+      // while the torch passes, and a rhythm for the eye
+      for (const bx of [6.5, 13, 19.5]) {
+        P().wall(world, bx - 0.45, 17.5, bx + 0.45, 18.6, H, 0.9, L().vaultStone);
+        P().wall(world, bx - 0.45, 21.4, bx + 0.45, 22.5, H, 0.9, L().vaultStone);
+        OTR.stealth.addHideSpot(world, bx + 1.1, 18.1, 1.0);
+        OTR.stealth.addHideSpot(world, bx + 1.1, 21.9, 1.0);
+      }
+      // pillars flanking the north corridor to the trap chamber
+      P().column(world, 29.3, 35, H, 0.55, L().vaultStone);
+      P().column(world, 32.7, 39, H, 0.55, L().vaultStone);
+      // Isabella's veil, at the dead west end of the cross corridor
+      OTR.relics.place(world, 'veil', -1.4, 20.2, 0.25);
       P().rock(world, -3, -1, 0.5, 0, L().vaultStone);
       P().rock(world, 1.7, 8, 0.6, 0, L().vaultStone);   // leans on A's east wall
       P().rock(world, 12, 18.4, 0.5, 0, L().vaultStone); // leans on B's south wall
@@ -170,6 +184,7 @@
   }
 
   function beginMaze(world, ctx, lamp) {
+    setTimeout(() => OTR.ui.toast('Crouch (C) to keep low behind the stones. Hood the lamp (F) when torchlight comes near&mdash;it hides you, and blinds you.', 6500), 1800);
     [[0, 12], [10, 20], [22, 20], [31, 34]].forEach(d => {
       world.addTrigger({
         x: d[0], z: d[1], r: 3.5, once: false, onEnter: () => { lamp.gutter(1.4); OTR.audio.whisper && OTR.audio.whisper(); }
@@ -206,32 +221,20 @@
   function startSearcher(world, ctx, lamp, isabella) {
     setTimeout(() => OTR.ui.say([{ name: 'Manfred (distant)', text: 'Talk not to me of necromancers&mdash;I tell you she must be in the castle; I will find her in spite of enchantment!' }]), 900);
 
-    const searcher = F().guard(world, 10, 20);
-    // patrol stays inside corridor B (walls at z 17.5 / 22.5) — the old last
-    // waypoint (24, 23) sat beyond the north wall, so he clipped through it
-    searcher.userData.wp = [[2, 20], [23, 20], [23, 21.5], [2, 20]];
-    searcher.userData.wpi = 0;
-    let caughtCooldown = 0;
-    world.addUpdater((dt) => {
-      const wp = searcher.userData.wp[searcher.userData.wpi];
-      const dx = wp[0] - searcher.position.x, dz = wp[1] - searcher.position.z;
-      const d = Math.hypot(dx, dz);
-      if (d < 0.4) { searcher.userData.wpi = (searcher.userData.wpi + 1) % searcher.userData.wp.length; }
-      else {
-        const s = 1.5 * dt;
-        searcher.position.x += dx / d * s; searcher.position.z += dz / d * s;
-        searcher.position.y = world.groundHeight(searcher.position.x, searcher.position.z);
-        searcher.faceTo(wp[0], wp[1]);
-      }
-      caughtCooldown -= dt;
-      const pd = OTR.dist2D(searcher.position.x, searcher.position.z, OTR.player.pos.x, OTR.player.pos.z);
-      const exposed = lamp.fuel > 0.3 && lamp._draft <= 0;
-      if (pd < 2.6 && exposed && caughtCooldown <= 0) {
-        caughtCooldown = 3;
-        OTR.audio.stinger('hit');
-        ctx.fail('trapdoor', 'A torch swung toward you&mdash;you were seized and dragged back into the dark.');
-      }
-    });
+    // Manfred's men: one walks the long cross corridor, one the north
+    // passage and the trap chamber itself. Torchlight announces them; the
+    // buttresses and pillars are the only cover.
+    const onCaught = () => {
+      OTR.audio.stinger('hit');
+      ctx.fail('trapdoor', 'A torch swung toward you&mdash;you were seized and dragged back into the dark.');
+    };
+    const s1 = F().guard(world, 10, 20);
+    OTR.stealth.addSearcher(world, s1, [[2, 20], [23, 20], [23, 21.5], [2, 20]],
+      { speed: 1.4, range: 11, fov: 100, rate: 0.85, onCaught, name: 'A domestic' });
+    const s2 = F().guard(world, 31, 42);
+    OTR.stealth.addSearcher(world, s2, [[31, 29], [31, 42], [28, 47], [30, 52], [34, 49], [31, 42]],
+      { speed: 1.15, range: 10, fov: 95, rate: 0.8, pause: 2.2, onCaught, name: 'Manfred\u2019s captain',
+        lines: ['She must be hereabouts&mdash;search every stone!', 'Who moves there?', 'Bring the light!'] });
 
     placeTrapDoor(world, ctx, isabella);
   }

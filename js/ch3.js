@@ -40,6 +40,9 @@
         OTR.game.postfx.setGrade({ tint: 0xecf1ff, saturation: 0.92 });
         OTR.game.postfx.setGodrays(moonDir, { strength: 0.2, color: 0xbdcdf5 });
       }
+      if (OTR.atmo) {
+        OTR.atmo.set({ sunDir: moonDir, sunColor: 0xb9c8ee, sunAmount: 0.55, sunPower: 9, noise: 0.3, noiseScale: 0.03 });
+      }
       document.getElementById('vignette').style.opacity = 0.78;
 
       world.hardFloor = true;
@@ -151,6 +154,14 @@
       P().wallTorch(world, x - 3.7, 2.6, z - 4 + i * 8, 0, { intensity: 2.0, distance: 10 });
       P().wallTorch(world, x + 3.7, 2.6, z - 2 + i * 8, Math.PI, { intensity: 2.0, distance: 10 });
     }
+    // chests and benches along the gallery: low cover — crouch behind them
+    for (const [cx, cz] of [[-3.1, 20], [3.1, 12], [-3.1, 4], [3.1, -3]]) {
+      world.add(P().mesh(new THREE.BoxGeometry(0.9, 0.95, 2.2), L().woodDark, x + cx, 0.475, z + cz));
+      world.box(x + cx, z + cz, 0.9, 2.2, 0, 0.95);
+      OTR.stealth.addHideSpot(world, x + cx * 0.7, z + cz, 1.1);
+    }
+    // a leaf of the chronicle, in the chamber of the giant limb
+    OTR.relics.place(world, 'leaf', x + 11, z - 3.2, 0.3);
     // banners
     P().banner(world, x - 3.6, 4.4, z + 2, Math.PI / 2, 0x6a1220);
     P().banner(world, x + 3.6, 4.4, z + 14, -Math.PI / 2, 0x1a3a5a);
@@ -222,10 +233,23 @@
 
     ctx.freeze(false);
     setTimeout(() => {
-      ctx.objective('Descend through the gallery &mdash; find arms in the armoury by the postern gate');
-      OTR.ui.toast('A hollow groan sounds somewhere above&hellip;', 4200);
+      ctx.objective('Descend through the gallery unseen &mdash; find arms in the armoury by the postern gate');
+      OTR.ui.toast('A hollow groan sounds somewhere above&hellip; and below, torchlight: the domestics are returning.', 5200);
       OTR.audio.whisper();
     }, resumed ? 200 : 300);
+
+    // Manfred's domestics, back early: one paces the gallery, one keeps
+    // the armoury and the postern. Caught = back to the top of the gallery.
+    const onCaught = () => {
+      OTR.audio.stinger('hit');
+      ctx.fail('interior', 'Seized in the gallery, and thrown back into the tower to await the Prince.');
+    };
+    const g1 = F().guard(world, x + 2, z + 8);
+    OTR.stealth.addSearcher(world, g1, [[x + 2, z + 8], [x - 2, z + 20], [x + 1.5, z + 26], [x - 2, z + 14], [x + 2, z + 2], [x - 1.5, z - 6]],
+      { speed: 1.2, range: 12, fov: 100, rate: 0.8, onCaught, name: 'A domestic', lines: ['Who stirs there?', 'The prisoner&mdash;look to the prisoner!', 'Hold!'] });
+    const g2 = F().guard(world, x + 7, z - 6);
+    OTR.stealth.addSearcher(world, g2, [[x + 7, z - 5], [x + 2, z - 8], [x - 2.5, z - 7], [x + 1, z - 4], [x + 9, z - 4]],
+      { speed: 1.0, range: 10, fov: 95, rate: 0.85, pause: 2.4, onCaught, name: 'The armourer' });
 
     // take the arms
     world.addInteractable({

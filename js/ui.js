@@ -60,10 +60,22 @@
 
   // ---------- lamp meter ----------
   UI.showLamp = function (show) { el('lamp-meter').style.opacity = show ? 1 : 0; };
-  UI.setLamp = function (frac) {
+  UI.setLamp = function (frac, shuttered) {
     el('lamp-fill').style.width = Math.max(0, Math.min(1, frac)) * 100 + '%';
-    el('lamp-fill').style.opacity = frac < 0.22 ? (0.4 + 0.6 * Math.abs(Math.sin(performance.now() / 120))) : 1;
+    el('lamp-fill').style.opacity = (frac < 0.22 ? (0.4 + 0.6 * Math.abs(Math.sin(performance.now() / 120))) : 1) * (shuttered ? 0.35 : 1);
+    el('lamp-meter').classList.toggle('shut', !!shuttered);
   };
+
+  // ---------- detection eye ----------
+  UI.setDetect = function (level, suspicious) {
+    const d = el('detect');
+    if (!d) return;
+    d.style.opacity = level > 0.02 ? 1 : 0;
+    el('detect-fill').style.height = Math.min(1, level) * 100 + '%';
+    d.classList.toggle('alert', level > 0.6);
+    d.classList.toggle('sus', !!suspicious);
+  };
+  UI.setCrouch = function (on) { const c = el('crouch'); if (c) c.style.opacity = on ? 1 : 0; };
 
   // ---------- crosshair ----------
   UI.showCrosshair = (show) => { el('crosshair').style.opacity = show ? 1 : 0; };
@@ -124,7 +136,10 @@
   };
 
   // ---------- QTE ----------
-  // Returns promise<boolean> success. Player must press the key within window.
+  // Returns promise<boolean> success. Player must press the key within the
+  // window. key: 'SPACE' | 'W' | 'A' | 'S' | 'D' — any *other* one of those
+  // pressed first counts as a miss (a parry the wrong way).
+  const QTE_CODES = { SPACE: ['Space', 'KeyE', 'Enter'], W: ['KeyW', 'ArrowUp'], S: ['KeyS', 'ArrowDown'], A: ['KeyA', 'ArrowLeft'], D: ['KeyD', 'ArrowRight'] };
   UI.qte = function (label, key = 'SPACE', windowMs = 1100) {
     return new Promise((resolve) => {
       const q = el('qte'), ring = el('qte-ring');
@@ -144,13 +159,22 @@
         q.style.opacity = 0;
         resolve(ok);
       }
+      const want = QTE_CODES[key] || QTE_CODES.SPACE;
+      const others = [].concat(...Object.keys(QTE_CODES).filter(k => k !== key).map(k => QTE_CODES[k]));
+      OTR.input.spacePressed = false; OTR.input.interactPressed = false;
       const checkT = setInterval(() => {
         if (done) { clearInterval(checkT); return; }
-        if (OTR.input.spacePressed || OTR.input.interactPressed) {
-          OTR.input.spacePressed = false; OTR.input.interactPressed = false;
+        const inp = OTR.input;
+        const fresh = inp.lastKeyTime > start ? inp.lastKey : null;
+        if (fresh && want.indexOf(fresh) >= 0) {
+          inp.spacePressed = false; inp.interactPressed = false;
           clearInterval(checkT);
           OTR.audio.sword && OTR.audio.sword();
           finish(true);
+        } else if (fresh && others.indexOf(fresh) >= 0) {
+          inp.spacePressed = false; inp.interactPressed = false;
+          clearInterval(checkT);
+          finish(false);
         } else if (performance.now() - start > windowMs) {
           clearInterval(checkT);
           finish(false);
@@ -184,6 +208,7 @@
 
   UI.hideAllHud = function () {
     UI.setObjective(null); UI.hidePrompt(); UI.showLamp(false); UI.showCrosshair(false);
+    UI.setDetect(0, false); UI.setCrouch(false);
     hideSubtitle();
   };
 

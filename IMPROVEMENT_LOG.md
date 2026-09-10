@@ -134,9 +134,8 @@ between before and after captures at matched views).
 
 ### Open for next time
 
-- Tree crowns are still faceted icosahedra in silhouette against the moon.
-  A cheap fix: a ring of alpha-tested leaf cards on the crown's outer shell
-  for trees within ~40 m of the path only.
+- ~~Tree crowns are still faceted icosahedra in silhouette against the
+  moon.~~ Done in session 2 (crown fringe, below).
 - The sea is a flat plane with vertex waves; it needs a moon glitter
   (normal-mapped ripples) and a foam line at the beach.
 - Ch. III (the tower) was left untouched this pass beyond the sky; its
@@ -148,3 +147,229 @@ between before and after captures at matched views).
   when the drawing buffer exceeds ~3 Mpx).
 - No build step was introduced; none is needed. Upload is still "copy the
   folder" (see README).
+
+---
+
+## Session 2 — 2026-09-05 — crown fringe (follow-up to PR #8)
+
+**Tree silhouettes.** `props.tree` takes `opts.fringe`: each foliage lobe
+gets 9 + 3·r alpha-tested leaf-cluster cards seated on its outer shell,
+facing outward with a random roll, merged into one geometry per tree
+(one extra draw call). A new `leafCardTex` (110 pointed leaves radiating
+from a loose centre) replaces the old unused ellipse cluster for this. The
+cards are on layer 1 so the SSAO depth prepass — which ignores alphaTest —
+cannot draw square halos around them; they receive shadows but do not cast
+(the lobes already do). Applied to wood trees within 34 m of the path and
+courtyard trees within 110 m; far trees keep the cheap lobes and dissolve
+in fog anyway.
+
+Verified: Ch. IV crowns against the moon read as leafy, ragged edges rather
+than facet outlines; the courtyard tree by the gate tower shows the fringe
+in daylight. Ch. IV wood view: 2418 → 2532 draw calls, 471 k → 498 k
+triangles. No page errors.
+
+Open: the fringe does not sway with the grass wind; the unfringed far
+trees are still domes when the fog is thin (the beach looking back).
+
+---
+
+## Session 3 — 2026-09-05 — making it a game (v0.3)
+
+The brief: more game, less walk. The constraint from the audience profile
+still holds — tension and dread over mechanical complexity — so the new
+systems are all about *being hunted in the dark*, not inventories or
+combat depth.
+
+### What changed
+
+**Stealth — `js/stealth.js`** (new). A searcher is a torch-bearing figure
+on a waypoint loop with pauses to look about. Each frame: vision cone
+(≈95–100°), range scaled by the player's visibility, and a 2D line-of-sight
+test against the world's colliders *at the player's current eye height*, so
+crouching behind a chest hides you and standing does not. Seen time fills a
+detection meter (faster when close, lit, running); unseen time drains it.
+Above 0.3 the searcher goes suspicious — turns to the last-seen point,
+creeps closer, calls out (a toast in the figure's voice, a stinger). At 1.0
+the chapter's `onCaught` fires (fail to checkpoint). Running within earshot
+is *heard*, cone or no cone. Visibility multipliers: crouched ×0.55, running
+×1.35, lamp lit ×1.5, lamp hooded ×0.5, crouched in a registered hide-spot
+×0.3. HUD: an eye that fills (gold → red past 0.6, gold rim while a
+searcher is suspicious) and a heartbeat that quickens with the meter.
+
+**Player.** Crouch on C/Ctrl (eye height ×0.62, speed ×0.62, no running;
+eased over a few frames). Lamp hood on F in the vaults: light ×0.12,
+near-invisible, near-blind; HUD meter dims.
+
+**Chapter II (vaults)** now has two searchers: the cross-corridor domestic
+and Manfred's captain on the north passage and inside the trap chamber
+itself, so the final search is under pressure. Three pairs of buttresses
+along the cross corridor and two pillars in the north passage give cover;
+each buttress niche is a hide-spot. The old "within 2.6 m = caught" check
+is gone.
+
+**Chapter III (tower)** was a walk; it is now a stealth run. Two domestics
+returned early: one paces the gallery, one keeps the armoury and postern.
+Four chests along the gallery walls are crouch-height cover (block sight
+only when the eye is below 0.95 m). Caught = back to the top of the
+gallery ("thrown back into the tower").
+
+**Chapter IV duel** is directional: the knight telegraphs (arm pose +
+label) and the prompt wants the matching key — W high guard, S low guard,
+A/D sidestep, Space strike/disarm; eight rounds. A wrong key is a miss
+like a late one. Three wounds and you fall (fail to the duel checkpoint,
+with a message). `ui.qte` accepts a key name and treats the other QTE keys
+as misses; `input` records the last key edge.
+
+**Relics — `js/relics.js`** (new). Five gilt reliquaries, one per chapter,
+in places off the objective path (courtyard wall, dead end of the cross
+corridor, chamber of the giant limb, cave floor beyond the cleft, north
+aisle bench). Each opens a short note in the tale's voice (original text,
+GPL, not Walpole). Persisted in localStorage; tally on the title and pause
+screens.
+
+**Bug fixed along the way:** the checkpoint-fail message was never seen —
+`startChapter` wipes the toast while rebuilding. It is now deferred until
+the checkpoint has faded back in.
+
+### Verified
+
+A headless functional test (Playwright; the harness drives the world by
+stepping `player.update`/`world.update` directly because SwiftShader
+frames take 1–2 s): 16 checks pass — line of sight blocked by a buttress
+and open down the corridor; C and F toggle crouch and hood; detection
+rises in a searcher's cone, the searcher turns suspicious and calls out,
+the eye shows and fills, capture fails to checkpoint with the message
+shown after reload; crouched behind a buttress the meter stays at 0; both
+tower guards present and the gallery guard sees the player; the relic
+prompt, note and persistence; the duel won on the right keys advancing to
+Chapter V, and three wrong parries falling with the message. No page
+errors.
+
+### Tried and rejected
+
+- Per-searcher alert propagation (one guard calling the others) — more
+  systems than the audience wants; the two-searcher layouts already
+  create crossing patrols.
+- A health bar for the duel — replaced by the wounds line in prose, which
+  keeps the HUD clean and reads as the book.
+
+### Open for next time
+
+- Searchers do not react to the hooded lamp's *absence* of light (a
+  torch-bearer walking into a dark corridor could pause) — flavour only.
+- Isabella follows during the vault search and is never seen by the
+  searchers; making her hide with you (kneel when you crouch) would sell it.
+- The duel could vary the round order per attempt.
+- Tune on real hardware: detection rates were set against simulated time.
+
+---
+
+## Session 4 — 2026-09-05 — the air, the water, and a 4K mode (v0.4)
+
+Request: "AAA 4K graphics". Everything here is still plain static files;
+no build step, no new assets. The pass went after the three things that
+separate a lit scene from a *cinematic* one — the air between the camera
+and the walls, the quality of the highlights, and pixel density — plus the
+one surface that was still flat-shaded: the sea.
+
+### What changed
+
+**Atmosphere (`js/atmo.js`, new).** three.js fog is a flat blend toward one
+colour by distance. The shared fog shader chunks are now rewritten once at
+load, so *every* built-in material (stone, ground, figures, sprites, mist
+sheets, grass) gets:
+
+- height fog — an exponential density profile integrated analytically along
+  the camera→fragment ray. The forest mist lies in the low ground and thins
+  toward the canopy (base 0.5 m, falloff 0.18, 70 %); the courtyard haze
+  thins up the walls so the battlements read crisper than the paving;
+- inscatter — the fog colour brightens toward the sun/moon with a tunable
+  lobe (courtyard: warm, power 7; wood: moon-blue, power 5; tower: power 9),
+  so the far haze glows where the light stands behind it;
+- drifting density — a 2-octave value noise over world XZ, scrolled slowly,
+  so the far fog breathes in banks (strongest in the wood and the vaults).
+
+Uniforms are shared objects injected through `Material.prototype.onBuild`,
+which the renderer calls for every program it compiles, so one set of values
+drives every material including the ones with their own `onBeforeCompile`.
+Chapters call `OTR.atmo.set({...})`; `startChapter` resets it. Nothing in
+the chapters' existing `setFog` calls changed.
+
+**Post pipeline (`js/postfx.js`).** A second, quarter-res bloom tier (the
+bright pass resampled down and blurred there) adds the broad soft veil
+around torches and the sun that the tight half-res glow could not give; a
+faint radial chromatic aberration in the composite (0.0025, growing toward
+the frame edge) takes the "computer-clean" edge off highlights. New
+`setQuality()` exposes the AO resolution scale and sample count (compiled
+in as `AO_SAMPLES`), the wide tier, and the aberration amount.
+
+**Graphics presets (`js/quality.js`, new).** Low / Medium / High / Ultra
+4K, and Auto (default). Ultra renders at ≥2× the display's pixels — a
+3840×2160 internal image on a 1080p screen, native on a 4K/Retina display —
+with full-resolution AO ×16 samples, 4096 shadow maps, 16× anisotropy and
+the wide bloom. Low is 1×, 1024 shadows, half-res AO ×7, no wide tier, no
+aberration. Auto starts at High and watches real in-world frame times in 3 s
+windows: over 26 ms steps down, under 9 ms steps up, with a cooldown and a
+lock after any down-step that follows an up-step, so it cannot seesaw.
+Everything applies live — pixel ratio, post targets, directional shadow
+maps (disposed and rebuilt at the new size), texture anisotropy — and the
+choice persists. A **Graphics** button on the title and pause screens cycles
+it; the version tag and README list it.
+
+**Water (`materials.water`).** The sea was a flat dark plane with a CPU
+swell. It now carries a tileable normal map (sum of nine directional sines,
+integer wave counts so it wraps) sampled three times at different scales
+and drift speeds so the surface rolls rather than slides; the moon and the
+baked sky break into a field of glitter across it. A foam line breathes
+along the shore (a slow noise inside a band from the water's edge), whiter
+and rougher where it breaks.
+
+Anisotropic filtering went from 8× to the preset's value (16× on High and
+Ultra) for every surface texture, including the drawn ashlar walls.
+
+### Verified
+
+Headless SwiftShader captures of every chapter (scratchpad `v4/`): the
+wood shows the mist lying low with the canopy clear above it and the far
+fog in banks; the courtyard and tower are unchanged in tone with the sky
+and battlements intact; the tower gallery, vaults and tomb resume without
+daylight inscatter leaking in. A new functional suite (`gfxtest.js`, 13
+checks) passes: Auto/High default at 1× on a 1× display; Ultra doubles the
+drawing buffer (1280×720 from a 640×360 window) with full-res AO ×16 and
+persists; Low drops to half-res AO ×7, 1024 shadows and no wide tier;
+cycling order; the chapter-1 shadow map follows the preset and is resized
+and rebuilt live mid-chapter; the fog chunk is compiled into 13 of 23
+programs and the inscatter amount is read back from every fogged GPU
+program; the water program links with its ripple map, the fog drift time
+advances, and Chapter II resumes with inscatter and height fog reset. The
+v0.3 gameplay suite (16 checks) still passes once its duel step stretches
+the parry windows for the harness — the windows are wall-clock and the
+evidence screenshot now outlasts them under SwiftShader; a direct trace of
+the duel shows all eight parries land and the chapter advances. An Ultra
+run on a 1920×1080 window at 2× DPR produced a 3840×2160 scene buffer with
+3840×2160 AO ×16 and 16× anisotropy, no GL error (`v4/ch1-ultra4k.png`).
+
+Cost, SwiftShader ms/frame at 1280×720, High preset, same machine, run
+sequentially against the previous commit: courtyard 2344 → 2824 (+20 %),
+wood 4278 → 5450 (+27 %). Most of that is the 16× anisotropy and the extra
+bloom tier, both of which are near-free on a real GPU; Auto steps down if
+they are not.
+
+### Tried and rejected
+
+- Screen-space depth fog in the post pass (would double-fog against the
+  material fog and miss the sprites) — patching the shared fog chunk gives
+  every material the same air for one code path.
+- 8192 shadow maps for Ultra — 256 MB of depth for a barely visible gain
+  at this geometry scale.
+- Vignette and film grain inside the composite — the CSS overlays already
+  do this at zero GPU cost; moving them would only add uniforms.
+
+### Open for next time
+
+- Real-hardware tuning of the Auto thresholds (26 ms / 9 ms) and of the
+  inscatter strengths; SwiftShader cannot say what a laptop GPU will do.
+- The water still has no refraction or depth tint at the shore; foam is a
+  band, not wave-driven.
+- Temporal anti-aliasing would let Ultra drop MSAA at 4K.
+- A sharpening pass for Medium/Low, where the image is below native.

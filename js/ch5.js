@@ -28,6 +28,7 @@
         ]
       });
       world.setFog(0x08080f, 6, 60);
+      if (OTR.atmo) OTR.atmo.set({ sunDir: new THREE.Vector3(-20, 40, -10), sunColor: 0x6f7fa8, sunAmount: 0.3, sunPower: 8, noise: 0.4, noiseScale: 0.1 });
       world.sun(0x8090b8, 0.35, new THREE.Vector3(-20, 40, -10), 0x1a2038, 0.22);
       OTR.game.renderer.toneMappingExposure = 1.04;
       if (OTR.game.postfx) OTR.game.postfx.setGrade({ tint: 0xeaf0ff, saturation: 0.9 });
@@ -82,6 +83,8 @@
       candle(world, -3.2, -14 + i * 6);
       candle(world, 3.2, -14 + i * 6);
     }
+    // Jerome's breviary, left on a bench in the north aisle
+    OTR.relics.place(world, 'breviary', -5.0, -12, 0.3);
     // altar area with tall candles
     candle(world, -2, 14, 1.4); candle(world, 2, 14, 1.4);
     // the tomb of Alfonso, before the altar

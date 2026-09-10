@@ -92,7 +92,8 @@
       // 4096 where the GPU comfortably allows it — the texel density is what
       // keeps crenellation and figure shadows from dissolving into blobs.
       const maxTex = this.renderer.capabilities.maxTextureSize || 4096;
-      const mapSize = opts.mapSize || (maxTex >= 8192 ? 4096 : 2048);
+      const want = (OTR.quality && OTR.quality.shadowMapSize) || 4096;
+      const mapSize = opts.mapSize || Math.min(want, maxTex >= 8192 ? 4096 : 2048);
       sun.shadow.mapSize.set(mapSize, mapSize);
       const s = opts.area || 60; // fit the frustum to the playable area
       sun.shadow.camera.left = -s; sun.shadow.camera.right = s;
@@ -291,6 +292,7 @@
       const lamp = {
         light, flame, fuel: 1, base: opts.intensity || 2.6, on: true,
         steadiness: 1, // 1 steady, dips in drafts
+        shuttered: false, // F: hood the lamp — near-dark, but near-invisible
         gutter(sec = 1) { this._draft = Math.max(this._draft || 0, sec); },
         _draft: 0,
         setFuel(v) { this.fuel = OTR.clamp(v, 0, 1); },
@@ -305,16 +307,18 @@
         else { lamp.fuel = Math.min(1, lamp.fuel + dt * 0.06); }
         const draftDip = lamp._draft > 0 ? (0.25 + 0.4 * Math.abs(Math.sin(e * 22))) : 1;
         const flick = 0.82 + 0.18 * (Math.sin(e * 13) * 0.5 + Math.sin(e * 27 + 1.3) * 0.5);
-        const lvl = lamp.base * lamp.fuel * draftDip * flick;
+        lamp._shut = lamp._shut == null ? 0 : lamp._shut + ((lamp.shuttered ? 1 : 0) - lamp._shut) * Math.min(1, dt * 6);
+        const hood = 1 - 0.88 * lamp._shut;
+        const lvl = lamp.base * lamp.fuel * draftDip * flick * hood;
         light.intensity = lvl;
         // position: at player's hand, slightly forward-right
         const p = OTR.player, fwd = p.forwardVec();
         const rx = fwd.z, rz = -fwd.x;
         light.position.set(p.pos.x + fwd.x * 0.3 + rx * 0.35, p.pos.y - 0.2, p.pos.z + fwd.z * 0.3 + rz * 0.35);
         flame.position.copy(light.position);
-        flame.material.opacity = OTR.clamp(lamp.fuel * draftDip * 1.2, 0, 1);
+        flame.material.opacity = OTR.clamp(lamp.fuel * draftDip * 1.2, 0, 1) * hood;
         flame.scale.set(0.12 + lvl * 0.02, 0.2 + lvl * 0.03, 1);
-        OTR.ui.setLamp(lamp.fuel * (lamp._draft > 0 ? 0.5 : 1));
+        OTR.ui.setLamp(lamp.fuel * (lamp._draft > 0 ? 0.5 : 1), lamp.shuttered);
       });
       return lamp;
     }
